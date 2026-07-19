@@ -1,6 +1,8 @@
+export type SessionStatus = "working" | "waiting" | "idle";
 export interface SessionInfo {
   id: string; project: string; name: string;
   created: number; activity: number; attached: number;
+  status: SessionStatus;
 }
 export interface ProjectInfo {
   name: string; dir: string; lastActivity: number | null;

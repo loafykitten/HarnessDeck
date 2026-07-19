@@ -5,6 +5,8 @@ const PREFIX = "cc-";
 const SEP = "--";
 export const DEV_DIR = join(homedir(), "Developer");
 
+export type SessionStatus = "working" | "waiting" | "idle";
+
 export interface Session {
   id: string;
   project: string;
@@ -12,6 +14,7 @@ export interface Session {
   created: number;
   activity: number;
   attached: number;
+  status: SessionStatus;
 }
 
 export async function tmux(...args: string[]): Promise<{ ok: boolean; out: string; err: string }> {
@@ -31,6 +34,21 @@ function sanitize(s: string): string {
 
 export function sessionId(project: string, name: string): string {
   return `${PREFIX}${sanitize(project)}${SEP}${sanitize(name)}`;
+}
+
+/** Classify a session from its visible pane. Claude Code paints a transient
+    spinner line with an elapsed-time timer ("✳ Actualizing… (3m 3s · …")
+    while running, and numbered ❯ options when it's waiting on a human
+    answer; the bare "❯" input prompt is always on screen, so waiting must
+    match the option list, not the prompt. Working is checked first: stale
+    question text can linger in the visible scrollback. */
+async function sessionStatus(id: string): Promise<SessionStatus> {
+  const res = await tmux("capture-pane", "-p", "-t", `${id}:`);
+  if (!res.ok) return "idle";
+  const tail = res.out.trimEnd().split("\n").slice(-30).join("\n");
+  if (/… \(\d+m? ?\d*s ?·|esc to interrupt/.test(tail)) return "working";
+  if (/❯ ?\d+[.)] |Do you want|Would you like to proceed|What should Claude do instead/.test(tail)) return "waiting";
+  return "idle";
 }
 
 export async function listSessions(): Promise<Session[]> {
@@ -55,8 +73,11 @@ export async function listSessions(): Promise<Session[]> {
       created: Number(created) * 1000,
       activity: Number(activity) * 1000,
       attached: Number(attached),
+      status: "idle",
     });
   }
+  const statuses = await Promise.all(sessions.map(s => sessionStatus(s.id)));
+  sessions.forEach((s, i) => { s.status = statuses[i]; });
   sessions.sort((a, b) => b.activity - a.activity);
   return sessions;
 }

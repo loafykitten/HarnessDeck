@@ -1,4 +1,5 @@
 import { api, type Greeting, type ProjectInfo, type SessionInfo, type Usage } from "./api";
+import { chime } from "./sound";
 
 export const app = $state({
   route: parseRoute(location.hash),
@@ -43,11 +44,30 @@ export function toggleTheme() {
   localStorage.setItem("cc-theme", next);
 }
 
+/** Is this session's terminal on screen right now? (No chime for what
+    the user is already watching.) */
+function isOnScreen(s: SessionInfo): boolean {
+  if (document.hidden) return false;
+  const r = app.route;
+  if (r.view !== "project" || r.name !== s.project) return false;
+  const mine = app.sessions.filter(x => x.project === s.project);
+  const activeId = r.session && mine.some(x => x.id === r.session) ? r.session : mine[0]?.id;
+  return activeId === s.id;
+}
+
 export async function refreshCore() {
   try {
     const [projects, sessions] = await Promise.all([api.projects(), api.sessions()]);
+    const prev = new Map(app.sessions.map(s => [s.id, s.status]));
     app.projects = projects;
     app.sessions = sessions;
+    // chime when a session stops working while not being watched; if several
+    // land in one poll, a question outranks a completion — one sound, not a chord
+    const stopped = sessions.filter(s =>
+      prev.get(s.id) === "working" && s.status !== "working" && !isOnScreen(s));
+    if (stopped.length > 0) {
+      chime(stopped.some(s => s.status === "waiting") ? "question" : "done");
+    }
   } catch (e) {
     console.error("refreshCore", e);
   }

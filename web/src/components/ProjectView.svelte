@@ -71,7 +71,7 @@
         role="tab" tabindex="0" aria-selected={s.id === activeId}
         onclick={() => activeId = s.id}
         onkeydown={(e) => e.key === "Enter" && (activeId = s.id)}>
-        <span class="tdot"></span>{s.name}
+        <span class="tdot {s.status}"></span>{s.name}
         <span class="tab-x" role="button" tabindex="0" aria-label="Kill session"
           onclick={(e) => { e.stopPropagation(); closeSession(s.id); }}
           onkeydown={(e) => e.key === "Enter" && (e.stopPropagation(), closeSession(s.id))}>✕</span>

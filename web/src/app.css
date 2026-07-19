@@ -408,8 +408,9 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 }
 .tab.active::after{content:"";position:absolute;left:0;right:0;bottom:-2px;height:3px;
   background:var(--term-bar)}
-.tab.active .tdot{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 2s infinite}
 .tdot{width:7px;height:7px;border-radius:50%;background:var(--ink-faint)}
+.tdot.working{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 2s infinite}
+.tdot.waiting{background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 1.1s infinite}
 .tab.new{color:var(--accent-2);border-style:dashed}
 .tab .tab-x{color:var(--ink-faint);margin-left:4px;padding:0 2px;border-radius:4px}
 .tab .tab-x:hover{color:#ff5f57;background:rgba(255,95,87,.12)}
