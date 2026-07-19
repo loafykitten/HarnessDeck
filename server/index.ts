@@ -14,6 +14,7 @@ import {
   listSkills, getSkill, readSkillFile, writeSkillFile, deleteSkill,
   installFromUrl, generateSkill, getJob,
 } from "./skills";
+import { ensureTailscaleServe } from "./tailscale";
 
 const PORT = 4553;
 const DIST = join(import.meta.dir, "..", "web", "dist");
@@ -231,3 +232,6 @@ const server = Bun.serve<WsData>({
 });
 
 console.log(`Claude Command → http://localhost:${server.port} (loopback only)`);
+ensureTailscaleServe(PORT).then(url => {
+  if (url) console.log(`              ⤷ tailnet ${url}`);
+});
