@@ -142,6 +142,7 @@
         <button class="sess-item" onclick={() => navigate({ view: "project", name: s.project, session: s.id })}>
           <div class="sess-ico" class:alt={i % 2 === 1}>{i % 2 === 0 ? "◈" : "⬡"}</div>
           <div class="sess-meta"><b>{s.project}</b><div class="s">active {fmtAgo(s.activity)}</div></div>
+          <span class="sess-status {s.status}"><i></i>{s.status === "waiting" ? "needs you" : s.status}</span>
           <span class="sess-tag">{s.name}</span>
           <span class="sess-go">›</span>
         </button>
@@ -168,3 +169,18 @@
     </div>
   </div>
 </div>
+
+<style>
+  /* session status chip — colors ride the theme tokens, so all skins
+     (default/crimson/aero) restyle it for free */
+  .sess-status{display:inline-flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--ink-faint);padding:3px 9px;border-radius:999px;
+    background:var(--glass);border:1px solid var(--glass-brd);white-space:nowrap;flex-shrink:0}
+  .sess-status i{width:6px;height:6px;border-radius:50%;background:var(--ink-faint)}
+  .sess-status.working{color:var(--ok)}
+  .sess-status.working i{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:statuspulse 2s infinite}
+  .sess-status.waiting{color:var(--accent)}
+  .sess-status.waiting i{background:var(--accent);box-shadow:0 0 8px var(--accent);animation:statuspulse 1.1s infinite}
+  @keyframes statuspulse{0%,100%{opacity:1}50%{opacity:.45}}
+  @media (prefers-reduced-motion:reduce){.sess-status i{animation:none}}
+</style>
