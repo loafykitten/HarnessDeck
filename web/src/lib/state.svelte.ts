@@ -58,9 +58,11 @@ export function gotoProjects() {
   if (name) navigate({ view: "project", name });
 }
 
+const THEMES = ["", "crimson", "aero"];
 export function toggleTheme() {
   const r = document.documentElement;
-  const next = r.getAttribute("data-theme") === "crimson" ? "" : "crimson";
+  const cur = r.getAttribute("data-theme") ?? "";
+  const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
   r.setAttribute("data-theme", next);
   localStorage.setItem("cc-theme", next);
 }

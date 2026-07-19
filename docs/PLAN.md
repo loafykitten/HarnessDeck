@@ -54,10 +54,20 @@ Starts at login, serves on `http://localhost:4553`, bound to **127.0.0.1 only**.
 - Changes are written immediately; new Claude sessions pick them up.
 
 ### 5. Themes & chrome
-Two themes, both dark neon/vaporwave gradients, via CSS custom properties,
-toggle persisted in localStorage:
-- **pink/blue** (default)
-- **pink/red**
+Three themes via CSS custom properties (`data-theme` on `<html>`), cycle
+button in the rail, persisted in localStorage (`cc-theme`):
+- **pink/blue** (default) — dark neon/vaporwave
+- **pink/red** (`crimson`) — dark neon/vaporwave
+- **aero** — light Frutiger Aero skeuomorphism: sky gradient + clouds + soap
+  bubbles, white-gloss gel glass; CRT layers off (gloss/specular replaces
+  them); terminal stays dark ("deep-sea glass"). Reference mockup:
+  `drafts/design-aero.html`.
+
+Theme tokens added for aero (defaults preserve the dark themes byte-identical):
+`--num-hi` (numeral gradient start), `--gloss` (panel sheen), `--term-ink`
+(terminal/editor foreground, decoupled from `--ink`), `--term-cursor-accent`,
+`--term-sel` (xterm selection). Invariant: the two dark themes must render
+identically before/after any token refactor.
 
 Design language (converged from draft round 1): **glassmorphic panels over a
 bright drifting gradient with glow orbs** (draft #1) + **neon glow borders and

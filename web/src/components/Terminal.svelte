@@ -22,12 +22,13 @@
 
   function themeColors() {
     const css = getComputedStyle(document.documentElement);
+    const v = (name: string) => css.getPropertyValue(name).trim();
     return {
-      background: css.getPropertyValue("--term-bg").trim() || "#0d0921",
-      foreground: css.getPropertyValue("--ink").trim() || "#f4f0ff",
-      cursor: css.getPropertyValue("--accent").trim() || "#ff5ec7",
-      cursorAccent: "#000000",
-      selectionBackground: "rgba(160,107,255,.35)",
+      background: v("--term-bg") || "#0d0921",
+      foreground: v("--term-ink") || v("--ink") || "#f4f0ff",
+      cursor: v("--accent") || "#ff5ec7",
+      cursorAccent: v("--term-cursor-accent") || "#000000",
+      selectionBackground: v("--term-sel") || "rgba(160,107,255,.35)",
     };
   }
 

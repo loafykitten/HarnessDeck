@@ -50,7 +50,7 @@
     <button class="rail-item" data-tip="Theme" onclick={toggleTheme}>
       <span class="ico"><svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></span>
       <span class="lbl">Theme</span>
-      <span class="theme-swatch"><span class="tdotc b1"></span><span class="tdotc b2"></span></span>
+      <span class="theme-swatch"><span class="tdotc b1"></span><span class="tdotc b2"></span><span class="tdotc b3"></span></span>
     </button>
   </div>
 </aside>
