@@ -1,0 +1,115 @@
+<script lang="ts">
+  import { app, navigate, refreshCore } from "../lib/state.svelte";
+  import { api, fmtAgo } from "../lib/api";
+  import Terminal from "./Terminal.svelte";
+
+  let { project }: { project: string } = $props();
+
+  const mySessions = $derived(app.sessions.filter(s => s.project === project));
+  const projInfo = $derived(app.projects.find(p => p.name === project));
+
+  // Which session tab is open. Route may carry one; else first session.
+  let activeId = $state<string | null>(null);
+  $effect(() => {
+    const routeSession = app.route.view === "project" ? app.route.session : undefined;
+    if (routeSession && mySessions.some(s => s.id === routeSession)) {
+      activeId = routeSession;
+    } else if (activeId === null || !mySessions.some(s => s.id === activeId)) {
+      activeId = mySessions[0]?.id ?? null;
+    }
+  });
+
+  let naming = $state(false);
+  let newName = $state("");
+  let creating = $state(false);
+  let createError = $state("");
+
+  async function createNew() {
+    const name = newName.trim() || `session-${mySessions.length + 1}`;
+    creating = true;
+    createError = "";
+    try {
+      const { id } = await api.createSession(project, name);
+      naming = false;
+      newName = "";
+      await refreshCore();
+      activeId = id;
+    } catch (e) {
+      createError = e instanceof Error ? e.message : "failed";
+    } finally {
+      creating = false;
+    }
+  }
+
+  async function closeSession(id: string) {
+    if (!confirm("Kill this session? The Claude process will be terminated.")) return;
+    await api.killSession(id).catch(console.error);
+    await refreshCore();
+  }
+
+  const activeSession = $derived(mySessions.find(s => s.id === activeId));
+</script>
+
+<div class="glass glow pv-head">
+  <button class="pv-back" onclick={() => navigate({ view: "dash" })}>‹ Back</button>
+  <div class="pv-title">
+    <b>{project}</b>
+    <span class="pv-path mono">{projInfo?.dir?.replace(/^\/Users\/[^/]+/, "~") ?? ""}</span>
+  </div>
+  <div class="pv-metas">
+    {#if mySessions.length > 0}
+      <span class="pill"><span class="live-dot"></span> {mySessions.length} session{mySessions.length === 1 ? "" : "s"} running</span>
+    {/if}
+    <span class="pill">last activity {fmtAgo(projInfo?.lastActivity ?? null)}</span>
+  </div>
+</div>
+
+<div class="term-wrap">
+  <div class="tabs">
+    {#each mySessions as s (s.id)}
+      <div class="tab" class:active={s.id === activeId}
+        role="tab" tabindex="0" aria-selected={s.id === activeId}
+        onclick={() => activeId = s.id}
+        onkeydown={(e) => e.key === "Enter" && (activeId = s.id)}>
+        <span class="tdot"></span>{s.name}
+        <span class="tab-x" role="button" tabindex="0" aria-label="Kill session"
+          onclick={(e) => { e.stopPropagation(); closeSession(s.id); }}
+          onkeydown={(e) => e.key === "Enter" && (e.stopPropagation(), closeSession(s.id))}>✕</span>
+      </div>
+    {/each}
+    {#if naming}
+      <div class="tab new">
+        <!-- svelte-ignore a11y_autofocus -->
+        <input autofocus placeholder="session name…" bind:value={newName}
+          onkeydown={(e) => { if (e.key === "Enter") createNew(); if (e.key === "Escape") { naming = false; createError = ""; } }}
+          onblur={() => { if (!creating) { naming = false; createError = ""; } }} />
+      </div>
+    {:else}
+      <div class="tab new" role="button" tabindex="0"
+        onclick={() => naming = true}
+        onkeydown={(e) => e.key === "Enter" && (naming = true)}>+ new session</div>
+    {/if}
+    {#if createError}<div class="tab" style="color:#ff5f57">{createError}</div>{/if}
+  </div>
+
+  {#if mySessions.length > 0}
+    <div class="glass term">
+      <div class="term-bar">
+        <div class="tl"><i></i><i></i><i></i></div>
+        <span class="tt">{activeSession?.name ?? ""} — claude</span>
+        <span class="rt">{project}</span>
+      </div>
+      {#each mySessions as s (s.id)}
+        <Terminal sessionId={s.id} active={s.id === activeId} onEnded={refreshCore} />
+      {/each}
+    </div>
+  {:else}
+    <div class="glass term">
+      <div class="pv-empty">
+        <div class="big">No sessions in {project} yet</div>
+        <div>Spin one up — it runs in tmux and survives restarts.</div>
+        <button class="btn" onclick={() => { naming = true; }}>+ Start a session</button>
+      </div>
+    </div>
+  {/if}
+</div>

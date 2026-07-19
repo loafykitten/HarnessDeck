@@ -1,0 +1,15 @@
+{
+  "name": "claude-command",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun server/index.ts",
+    "dev": "bun --watch server/index.ts",
+    "build:web": "cd web && bun run build",
+    "build": "bun run build:web"
+  },
+  "dependencies": {
+    "bun-pty": "^0.4.10"
+  }
+}

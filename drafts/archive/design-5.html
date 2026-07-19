@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Design 5 — Retro-Futurist OS</title>
+<style>
+:root{
+  /* ---- default theme: pink/blue ---- */
+  --ink:#eaf6ff;
+  --ink-dim:#a9bce0;
+  --ink-mute:#7d8fc4;
+  --neon-a:#25d6ff;          /* primary neon (cyan) */
+  --neon-b:#ff6ec7;          /* pink */
+  --neon-c:#b06bff;          /* purple */
+  --good:#67ffb5;
+  --warn:#ffd36e;
+  --glass:rgba(20,10,44,.62);
+  --glass-2:rgba(30,15,58,.78);
+  --win-line:rgba(255,255,255,.16);
+  --bevel-hi:rgba(255,255,255,.35);
+  --bevel-lo:rgba(0,0,0,.55);
+  --title-a:#ff6ec7;
+  --title-b:#7a3bff;
+  --title-c:#25d6ff;
+  --desk-1:#1a0b2e;
+  --desk-2:#2c1050;
+  --desk-3:#3a0f57;
+  --desk-4:#0d0824;
+  --glow-a:rgba(37,214,255,.55);
+  --glow-b:rgba(255,110,199,.55);
+  --grid-line:rgba(37,214,255,.30);
+  --sun-1:#ff6ec7;
+  --sun-2:#ffd36e;
+  --term-bg:#0a0620;
+  --term-text:#c9f7ff;
+  --term-glow:rgba(37,214,255,.45);
+  --prompt:#67ffb5;
+}
+:root[data-theme="crimson"]{
+  /* ---- pink/red ---- */
+  --neon-a:#ff3d68;
+  --neon-b:#ff6ec7;
+  --neon-c:#ff8a5c;
+  --glow-a:rgba(255,61,104,.55);
+  --glow-b:rgba(255,110,199,.55);
+  --grid-line:rgba(255,61,104,.32);
+  --title-a:#ff6ec7;
+  --title-b:#c11d54;
+  --title-c:#ff3d68;
+  --desk-1:#26071c;
+  --desk-2:#450b28;
+  --desk-3:#5c0e2a;
+  --desk-4:#180413;
+  --sun-1:#ff6ec7;
+  --sun-2:#ffb15c;
+  --term-text:#ffd6de;
+  --term-glow:rgba(255,61,104,.45);
+  --ink:#ffeaf1;
+  --ink-dim:#e3aebf;
+  --ink-mute:#c88298;
+  --prompt:#ff9db4;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  min-height:100vh;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  color:var(--ink);
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+  background:var(--desk-4);
+}
+
+/* ===== DESKTOP ===== */
+.desktop{
+  position:relative;
+  min-height:100vh;
+  padding:0;
+  isolation:isolate;
+  background:
+    radial-gradient(120% 85% at 50% 118%, var(--glow-a), transparent 55%),
+    radial-gradient(90% 65% at 82% -6%, var(--glow-b), transparent 52%),
+    linear-gradient(162deg,var(--desk-1) 0%,var(--desk-2) 42%,var(--desk-3) 70%,var(--desk-4) 100%);
+  background-attachment:fixed;
+}
+/* neon sun */
+.desktop::before{
+  content:"";position:fixed;left:50%;bottom:9%;transform:translateX(-50%);
+  width:min(46vw,380px);height:min(46vw,380px);border-radius:50%;
+  background:linear-gradient(180deg,var(--sun-2),var(--sun-1));
+  -webkit-mask:linear-gradient(#000,#000),repeating-linear-gradient(0deg,#000 0 10px,transparent 10px 15px);
+  -webkit-mask-composite:source-in;mask-composite:intersect;
+  mask:linear-gradient(#000,#000),repeating-linear-gradient(0deg,#000 0 10px,transparent 10px 15px);
+  opacity:.28;filter:blur(.4px);z-index:-2;pointer-events:none;
+}
+/* perspective floor grid */
+.desktop::after{
+  content:"";position:fixed;inset:52% 0 0 0;z-index:-1;pointer-events:none;
+  background-image:
+    linear-gradient(var(--grid-line) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);
+  background-size:40px 40px;
+  transform:perspective(320px) rotateX(66deg);
+  transform-origin:top center;
+  -webkit-mask:linear-gradient(180deg,transparent,#000 40%);
+  mask:linear-gradient(180deg,transparent,#000 40%);
+  opacity:.5;
+}
+
+/* ===== MENU BAR ===== */
+.menubar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:2px;
+  padding:5px 8px;
+  background:linear-gradient(180deg,var(--glass-2),var(--glass));
+  border-bottom:1px solid var(--win-line);
+  box-shadow:0 1px 0 var(--bevel-hi) inset, 0 12px 34px rgba(0,0,0,.45);
+  backdrop-filter:blur(14px) saturate(1.4);
+  -webkit-backdrop-filter:blur(14px) saturate(1.4);
+  flex-wrap:wrap;
+}
+.mb-logo{
+  display:flex;align-items:center;gap:8px;
+  font-weight:800;letter-spacing:.3px;font-size:13.5px;
+  padding:4px 10px;border-radius:7px;
+  color:#fff;
+  background:linear-gradient(120deg,var(--title-a),var(--title-b));
+  box-shadow:0 0 0 1px var(--win-line),0 0 16px var(--glow-b),0 1px 0 var(--bevel-hi) inset;
+  text-shadow:0 0 10px rgba(0,0,0,.4);
+}
+.mb-logo .mark{
+  width:16px;height:16px;flex:none;filter:drop-shadow(0 0 5px var(--neon-a));
+}
+.mb-menus{display:flex;gap:1px;margin-left:4px;flex-wrap:wrap}
+.mb-item{
+  appearance:none;border:0;background:transparent;color:var(--ink);
+  font:inherit;font-size:12.5px;font-weight:600;
+  padding:5px 11px;border-radius:6px;cursor:pointer;letter-spacing:.2px;
+  transition:.12s;
+}
+.mb-item:hover{background:rgba(255,255,255,.08)}
+.mb-item.active{
+  color:#0a0620;background:var(--neon-a);
+  box-shadow:0 0 14px var(--glow-a),0 1px 0 var(--bevel-hi) inset;
+}
+.mb-item.dead{color:var(--ink-mute)}
+.mb-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.clock{
+  font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;
+  color:var(--neon-a);text-shadow:0 0 8px var(--glow-a);
+  padding:4px 9px;border-radius:6px;
+  border:1px solid var(--win-line);
+  background:rgba(0,0,0,.28);
+  box-shadow:inset 0 1px 0 var(--bevel-hi),inset 0 -1px 0 var(--bevel-lo);
+}
+/* theme toggle — beveled OS switch */
+.theme-tog{
+  display:flex;align-items:center;gap:6px;
+  padding:3px;border-radius:8px;
+  border:1px solid var(--win-line);
+  background:rgba(0,0,0,.34);
+  box-shadow:inset 0 1px 0 var(--bevel-hi),inset 0 -2px 3px var(--bevel-lo);
+  cursor:pointer;
+}
+.theme-tog .swatch{
+  width:26px;height:16px;border-radius:5px;position:relative;overflow:hidden;
+  border:1px solid rgba(255,255,255,.25);
+}
+.sw-blue{background:linear-gradient(120deg,#ff6ec7,#25d6ff)}
+.sw-red{background:linear-gradient(120deg,#ff6ec7,#ff3d68)}
+.theme-tog .swatch.on{box-shadow:0 0 0 2px #fff, 0 0 12px currentColor}
+.sw-blue.on{color:#25d6ff}
+.sw-red.on{color:#ff3d68}
+
+/* ===== SCREEN LAYOUT ===== */
+.stage{max-width:1180px;margin:0 auto;padding:18px 14px 120px}
+.screen{display:none}
+.screen.show{display:block;animation:boot .35s ease both}
+@keyframes boot{from{opacity:0;transform:translateY(8px) scale(.994)}to{opacity:1;transform:none}}
+
+/* ===== WINDOW (the core OS chrome) ===== */
+.win{
+  position:relative;border-radius:11px;
+  background:linear-gradient(180deg,var(--glass-2),var(--glass));
+  border:1px solid var(--win-line);
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.4),
+    0 1px 0 var(--bevel-hi) inset,
+    0 -1px 0 var(--bevel-lo) inset,
+    0 22px 50px rgba(0,0,0,.5),
+    0 0 34px -8px var(--glow-b);
+  backdrop-filter:blur(12px) saturate(1.35);
+  -webkit-backdrop-filter:blur(12px) saturate(1.35);
+  overflow:hidden;
+}
+.titlebar{
+  display:flex;align-items:center;gap:9px;
+  padding:7px 10px;
+  color:#fff;
+  background:
+    repeating-linear-gradient(0deg,rgba(255,255,255,.16) 0 1px,transparent 1px 3px),
+    linear-gradient(120deg,var(--title-a),var(--title-b) 55%,var(--title-c));
+  border-bottom:1px solid rgba(0,0,0,.4);
+  box-shadow:0 1px 0 var(--bevel-hi) inset;
+  text-shadow:0 1px 2px rgba(0,0,0,.5);
+}
+.tb-title{
+  font-size:12px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tb-ico{width:14px;height:14px;flex:none}
+.tb-dots{display:flex;gap:5px;margin-left:auto}
+.tb-dots span{
+  width:12px;height:12px;border-radius:3px;display:grid;place-items:center;
+  font-size:9px;line-height:1;color:rgba(0,0,0,.6);font-weight:900;
+  border:1px solid rgba(0,0,0,.4);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 0 7px currentColor;
+}
+.d-min{background:#ffd36e;color:#ffd36e}
+.d-max{background:#67ffb5;color:#67ffb5}
+.d-close{background:#ff6b8b;color:#ff6b8b}
+.win-body{padding:14px}
+
+/* dashboard grid */
+.grid{display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+.col-usage{grid-column:span 12}
+.col-sessions{grid-column:span 5}
+.col-projects{grid-column:span 7}
+@media(max-width:860px){
+  .col-sessions,.col-projects{grid-column:span 12}
+}
+
+/* section labels */
+.eyebrow{
+  font-family:ui-monospace,"SF Mono",monospace;font-size:10.5px;letter-spacing:2px;
+  text-transform:uppercase;color:var(--neon-a);text-shadow:0 0 8px var(--glow-a);
+  margin:0 0 3px;
+}
+
+/* ===== USAGE WIDGETS ===== */
+.usage-row{display:grid;gap:14px;grid-template-columns:repeat(3,1fr)}
+@media(max-width:720px){.usage-row{grid-template-columns:1fr}}
+.gauge{
+  border-radius:9px;padding:14px;
+  background:rgba(0,0,0,.3);
+  border:1px solid var(--win-line);
+  box-shadow:inset 0 1px 0 var(--bevel-hi),inset 0 -2px 6px var(--bevel-lo);
+  display:flex;gap:14px;align-items:center;
+}
+.ring{width:86px;height:86px;flex:none;position:relative}
+.ring svg{transform:rotate(-90deg);display:block;filter:drop-shadow(0 0 6px var(--glow-a))}
+.ring .track{stroke:rgba(255,255,255,.1)}
+.ring .fill{stroke:url(#gradA);stroke-linecap:round;transition:stroke-dashoffset 1s}
+.ring .fill.b{stroke:url(#gradB)}
+.ring-lbl{
+  position:absolute;inset:0;display:grid;place-content:center;text-align:center;
+}
+.ring-lbl b{font-size:19px;font-weight:800;font-family:ui-monospace,monospace;color:#fff}
+.ring-lbl small{font-size:9px;color:var(--ink-mute);letter-spacing:1px}
+.g-meta .g-name{font-weight:700;font-size:13px;margin:0 0 4px}
+.g-meta .g-sub{font-size:11.5px;color:var(--ink-dim);margin:0}
+.g-meta .g-reset{
+  display:inline-block;margin-top:7px;font-family:ui-monospace,monospace;font-size:10px;
+  color:var(--warn);padding:2px 7px;border-radius:5px;
+  background:rgba(255,211,110,.1);border:1px solid rgba(255,211,110,.3);
+}
+/* month card (big number) */
+.month{
+  grid-column:span 1;display:flex;flex-direction:column;justify-content:center;gap:6px;
+}
+.month .big{
+  font-family:ui-monospace,monospace;font-weight:800;font-size:26px;line-height:1;
+  color:#fff;text-shadow:0 0 14px var(--glow-b);
+}
+.month .dollar{color:var(--good);font-size:15px;font-weight:800;font-family:ui-monospace,monospace}
+.month .bar{
+  height:12px;border-radius:6px;overflow:hidden;margin-top:4px;
+  background:rgba(255,255,255,.09);
+  border:1px solid var(--win-line);
+  box-shadow:inset 0 1px 2px var(--bevel-lo);
+}
+.month .bar i{
+  display:block;height:100%;width:64%;
+  background:
+    repeating-linear-gradient(90deg,rgba(255,255,255,.25) 0 2px,transparent 2px 5px),
+    linear-gradient(90deg,var(--neon-b),var(--neon-a));
+  box-shadow:0 0 12px var(--glow-a);
+}
+
+/* ===== ACTIVE SESSIONS ===== */
+.sess{display:flex;flex-direction:column;gap:9px}
+.sess-item{
+  display:flex;align-items:center;gap:11px;
+  padding:10px 11px;border-radius:8px;cursor:pointer;text-align:left;
+  color:var(--ink);font:inherit;
+  background:rgba(0,0,0,.26);
+  border:1px solid var(--win-line);
+  box-shadow:inset 0 1px 0 var(--bevel-hi);
+  transition:.14s;
+}
+.sess-item:hover{
+  transform:translateX(3px);
+  border-color:var(--neon-a);
+  box-shadow:inset 0 1px 0 var(--bevel-hi),0 0 20px -4px var(--glow-a);
+}
+.live{
+  width:9px;height:9px;border-radius:50%;flex:none;
+  background:var(--good);box-shadow:0 0 0 3px rgba(103,255,181,.18),0 0 10px var(--good);
+  animation:pulse 1.8s ease-in-out infinite;
+}
+@keyframes pulse{50%{opacity:.4;transform:scale(.8)}}
+.sess-item .s-name{font-weight:700;font-size:13px;font-family:ui-monospace,monospace}
+.sess-item .s-proj{font-size:11px;color:var(--ink-mute)}
+.sess-item .go{
+  margin-left:auto;font-family:ui-monospace,monospace;font-size:11px;color:var(--neon-a);
+  opacity:.8;
+}
+
+/* ===== PROJECT GRID ===== */
+.projgrid{display:grid;gap:11px;grid-template-columns:repeat(2,1fr)}
+@media(max-width:520px){.projgrid{grid-template-columns:1fr}}
+.pcard{
+  text-align:left;font:inherit;color:var(--ink);cursor:pointer;
+  padding:12px;border-radius:9px;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(0,0,0,.28));
+  border:1px solid var(--win-line);
+  box-shadow:inset 0 1px 0 var(--bevel-hi),inset 0 -2px 6px var(--bevel-lo);
+  transition:.16s;
+}
+.pcard:hover{transform:translateY(-3px);border-color:var(--neon-b);box-shadow:0 0 24px -6px var(--glow-b)}
+.pcard .ph{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.pico{
+  width:26px;height:26px;border-radius:7px;flex:none;display:grid;place-items:center;
+  font-size:13px;
+  background:linear-gradient(135deg,var(--title-a),var(--title-b));
+  box-shadow:0 0 12px var(--glow-b),inset 0 1px 0 var(--bevel-hi);
+  color:#fff;
+}
+.pcard .pn{font-weight:800;font-size:13.5px;font-family:ui-monospace,monospace}
+.pcard .pstatus{font-size:11px;color:var(--ink-dim);display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.dot.on{background:var(--good);box-shadow:0 0 8px var(--good)}
+.dot.off{background:var(--ink-mute)}
+.pcard.active-p{border-color:var(--neon-a);box-shadow:0 0 22px -6px var(--glow-a)}
+.pbadge{
+  position:absolute;top:9px;right:9px;font-family:ui-monospace,monospace;font-size:9px;
+  padding:2px 6px;border-radius:5px;letter-spacing:.5px;
+  color:#0a0620;background:var(--neon-a);box-shadow:0 0 10px var(--glow-a);font-weight:800;
+}
+
+/* ===== PROJECT VIEW ===== */
+.proj-head{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;
+}
+.ph-path{
+  font-family:ui-monospace,monospace;font-size:13px;font-weight:800;color:#fff;
+}
+.ph-path .glyph{color:var(--neon-a);text-shadow:0 0 8px var(--glow-a)}
+.ph-meta{display:flex;gap:8px;flex-wrap:wrap}
+.chip{
+  font-family:ui-monospace,monospace;font-size:10.5px;
+  padding:3px 9px;border-radius:6px;color:var(--ink-dim);
+  border:1px solid var(--win-line);background:rgba(0,0,0,.3);
+  box-shadow:inset 0 1px 0 var(--bevel-hi);
+}
+.chip b{color:var(--good)}
+
+/* session tabs */
+.tabs{display:flex;gap:4px;align-items:flex-end;padding:0 10px;margin-bottom:-1px}
+.tab{
+  font:inherit;font-family:ui-monospace,monospace;font-size:11.5px;font-weight:700;
+  color:var(--ink-dim);cursor:pointer;
+  padding:7px 13px;border-radius:8px 8px 0 0;
+  background:rgba(0,0,0,.3);
+  border:1px solid var(--win-line);border-bottom:none;
+  box-shadow:inset 0 1px 0 var(--bevel-hi);
+  display:flex;align-items:center;gap:7px;
+}
+.tab.on{
+  color:#fff;
+  background:linear-gradient(180deg,var(--title-b),rgba(0,0,0,.4));
+  border-color:var(--neon-a);
+  box-shadow:0 0 16px -4px var(--glow-a),inset 0 1px 0 var(--bevel-hi);
+}
+.tab .tdot{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 8px var(--good)}
+.tab.new{color:var(--neon-a)}
+
+/* terminal */
+.term-win{border-color:var(--neon-a);box-shadow:0 0 0 1px rgba(0,0,0,.4),0 22px 50px rgba(0,0,0,.5),0 0 40px -8px var(--glow-a)}
+.term{
+  position:relative;
+  font-family:ui-monospace,"SF Mono",Menlo,monospace;
+  font-size:12.5px;line-height:1.62;
+  color:var(--term-text);
+  background:
+    radial-gradient(120% 100% at 50% 0%,rgba(37,214,255,.06),transparent 60%),
+    var(--term-bg);
+  padding:16px 16px 6px;
+  min-height:340px;
+  text-shadow:0 0 7px var(--term-glow);
+  overflow-x:auto;
+}
+.term::after{ /* scanlines */
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.28) 0 1px,transparent 1px 3px);
+  mix-blend-mode:multiply;opacity:.6;
+}
+.term pre{margin:0;white-space:pre-wrap;word-break:break-word}
+.t-prompt{color:var(--prompt);text-shadow:0 0 8px var(--prompt)}
+.t-user{color:#fff;font-weight:700}
+.t-box{color:var(--neon-c)}
+.t-dot{color:var(--neon-a)}
+.t-tool{color:var(--neon-b)}
+.t-out{color:var(--ink-dim);text-shadow:none}
+.t-add{color:var(--good)}
+.t-churn{color:var(--warn);animation:shimmer 1.4s ease-in-out infinite}
+@keyframes shimmer{50%{opacity:.5}}
+
+/* input area */
+.input-area{
+  border-top:1px solid var(--win-line);
+  background:linear-gradient(180deg,rgba(0,0,0,.4),rgba(10,6,32,.6));
+  padding:11px 13px;
+}
+.attach{display:flex;gap:8px;margin-bottom:9px;flex-wrap:wrap}
+.attach .att-chip{
+  display:inline-flex;align-items:center;gap:7px;
+  font-family:ui-monospace,monospace;font-size:11px;color:var(--ink);
+  padding:5px 9px;border-radius:7px;
+  background:rgba(176,107,255,.14);
+  border:1px solid var(--neon-c);
+  box-shadow:0 0 14px -4px var(--glow-b),inset 0 1px 0 var(--bevel-hi);
+}
+.att-chip .thumb{
+  width:16px;height:16px;border-radius:4px;flex:none;
+  background:linear-gradient(135deg,var(--neon-b),var(--neon-a));
+  box-shadow:0 0 8px var(--glow-a);
+}
+.att-chip .x{color:var(--ink-mute);cursor:pointer}
+.input-row{
+  display:flex;align-items:center;gap:10px;
+  font-family:ui-monospace,monospace;font-size:13px;
+  padding:10px 12px;border-radius:8px;
+  background:var(--term-bg);
+  border:1px solid var(--win-line);
+  box-shadow:inset 0 2px 6px var(--bevel-lo),inset 0 1px 0 rgba(255,255,255,.05);
+}
+.input-row .caret{color:var(--prompt);font-weight:800}
+.input-row .ph{color:var(--ink-mute)}
+.cursor{
+  display:inline-block;width:9px;height:16px;translate:0 3px;
+  background:var(--neon-a);box-shadow:0 0 10px var(--glow-a);
+  animation:blink 1.05s steps(1) infinite;
+}
+@keyframes blink{50%{opacity:0}}
+.input-row .send{
+  margin-left:auto;font-family:ui-monospace,monospace;font-size:11px;font-weight:800;
+  color:#0a0620;background:var(--neon-a);padding:5px 11px;border-radius:6px;
+  box-shadow:0 0 14px var(--glow-a),inset 0 1px 0 var(--bevel-hi);border:0;cursor:pointer;
+}
+
+/* ===== DOCK ===== */
+.dock{
+  position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:40;
+  display:flex;gap:8px;padding:8px 10px;border-radius:16px;
+  background:linear-gradient(180deg,var(--glass-2),var(--glass));
+  border:1px solid var(--win-line);
+  box-shadow:0 1px 0 var(--bevel-hi) inset,0 18px 40px rgba(0,0,0,.55),0 0 30px -10px var(--glow-b);
+  backdrop-filter:blur(16px) saturate(1.4);
+  -webkit-backdrop-filter:blur(16px) saturate(1.4);
+}
+.dock button{
+  width:42px;height:42px;border-radius:11px;border:1px solid var(--win-line);
+  display:grid;place-items:center;cursor:pointer;font-size:18px;
+  background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(0,0,0,.3));
+  box-shadow:inset 0 1px 0 var(--bevel-hi),inset 0 -2px 5px var(--bevel-lo);
+  color:var(--ink);transition:.15s;position:relative;
+}
+.dock button:hover{transform:translateY(-6px) scale(1.06);box-shadow:0 0 22px -4px var(--glow-a)}
+.dock button.on{border-color:var(--neon-a);box-shadow:0 0 20px -4px var(--glow-a)}
+.dock button.on::after{content:"";position:absolute;bottom:-5px;width:5px;height:5px;border-radius:50%;background:var(--neon-a);box-shadow:0 0 8px var(--neon-a)}
+@media(max-width:520px){.dock{gap:5px;padding:6px 7px}.dock button{width:36px;height:36px;font-size:15px}}
+
+/* hidden SVG defs holder */
+.defs{position:absolute;width:0;height:0}
+</style>
+</head>
+<body>
+<div class="desktop">
+
+  <!-- SVG gradient defs for rings -->
+  <svg class="defs" aria-hidden="true">
+    <defs>
+      <linearGradient id="gradA" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="var(--neon-b)"/>
+        <stop offset="1" stop-color="var(--neon-a)"/>
+      </linearGradient>
+      <linearGradient id="gradB" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="var(--neon-c)"/>
+        <stop offset="1" stop-color="var(--neon-a)"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <!-- ===== MENU BAR ===== -->
+  <div class="menubar">
+    <div class="mb-logo">
+      <svg class="mark" viewBox="0 0 24 24" fill="none">
+        <path d="M4 8l8-5 8 5v8l-8 5-8-5V8z" stroke="#fff" stroke-width="1.6" fill="rgba(255,255,255,.1)"/>
+        <path d="M8.5 10.5l2.5 3-2.5 3M13 16.5h3" stroke="var(--neon-a)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Claude Command
+    </div>
+    <nav class="mb-menus">
+      <button class="mb-item active" id="nav-dash" onclick="show('dashboard',this)">Dashboard</button>
+      <button class="mb-item" id="nav-proj" onclick="show('project',this)">Projects</button>
+      <button class="mb-item dead" onclick="return false">Skills</button>
+      <button class="mb-item dead" onclick="return false">Config</button>
+    </nav>
+    <div class="mb-right">
+      <button class="theme-tog" onclick="toggleTheme()" title="Switch theme" aria-label="Switch theme">
+        <span class="swatch sw-blue on" id="sw-blue"></span>
+        <span class="swatch sw-red" id="sw-red"></span>
+      </button>
+      <span class="clock" id="clock">3:42 PM</span>
+    </div>
+  </div>
+
+  <div class="stage">
+
+    <!-- ============ SCREEN 1: DASHBOARD ============ -->
+    <section class="screen show" id="dashboard">
+      <div class="grid">
+
+        <!-- USAGE -->
+        <div class="win col-usage">
+          <div class="titlebar">
+            <svg class="tb-ico" viewBox="0 0 16 16"><rect x="1" y="9" width="3" height="6" fill="#fff"/><rect x="6.5" y="5" width="3" height="10" fill="#fff"/><rect x="12" y="2" width="3" height="13" fill="#fff"/></svg>
+            <span class="tb-title">Usage Monitor.app</span>
+            <div class="tb-dots"><span class="d-min">–</span><span class="d-max">▢</span><span class="d-close">×</span></div>
+          </div>
+          <div class="win-body">
+            <div class="usage-row">
+
+              <div class="gauge">
+                <div class="ring">
+                  <svg width="86" height="86" viewBox="0 0 86 86">
+                    <circle class="track" cx="43" cy="43" r="36" fill="none" stroke-width="9"/>
+                    <circle class="fill" cx="43" cy="43" r="36" fill="none" stroke-width="9"
+                      stroke-dasharray="226.2" stroke-dashoffset="85.96"/>
+                  </svg>
+                  <div class="ring-lbl"><b>62%</b><small>5-HOUR</small></div>
+                </div>
+                <div class="g-meta">
+                  <p class="g-name">5-hour block</p>
+                  <p class="g-sub">62% of block used</p>
+                  <span class="g-reset">↻ resets 3:42 PM</span>
+                </div>
+              </div>
+
+              <div class="gauge">
+                <div class="ring">
+                  <svg width="86" height="86" viewBox="0 0 86 86">
+                    <circle class="track" cx="43" cy="43" r="36" fill="none" stroke-width="9"/>
+                    <circle class="fill b" cx="43" cy="43" r="36" fill="none" stroke-width="9"
+                      stroke-dasharray="226.2" stroke-dashoffset="133.46"/>
+                  </svg>
+                  <div class="ring-lbl"><b>41%</b><small>WEEKLY</small></div>
+                </div>
+                <div class="g-meta">
+                  <p class="g-name">Weekly limit</p>
+                  <p class="g-sub">41% of week used</p>
+                  <span class="g-reset">↻ resets Tue 11:59 PM</span>
+                </div>
+              </div>
+
+              <div class="gauge month">
+                <p class="eyebrow" style="margin:0">THIS MONTH</p>
+                <div><span class="big">182.4M</span> <span style="font-size:11px;color:var(--ink-mute)">tokens</span></div>
+                <div class="dollar">$412.87 <span style="font-size:10px;color:var(--ink-mute);font-weight:500">API-equiv</span></div>
+                <div class="bar"><i></i></div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- ACTIVE SESSIONS -->
+        <div class="win col-sessions">
+          <div class="titlebar">
+            <svg class="tb-ico" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="#fff" stroke-width="1.4"/><path d="M4 6l2 1.5L4 9M8 9.5h4" stroke="var(--good)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="tb-title">Active Sessions</span>
+            <div class="tb-dots"><span class="d-min">–</span><span class="d-max">▢</span><span class="d-close">×</span></div>
+          </div>
+          <div class="win-body">
+            <p class="eyebrow">3 live · click to attach</p>
+            <div class="sess">
+              <button class="sess-item" onclick="show('project')">
+                <span class="live"></span>
+                <span><span class="s-name">refactor-parser</span><br><span class="s-proj">SwiftClaw</span></span>
+                <span class="go">attach →</span>
+              </button>
+              <button class="sess-item" onclick="show('project')">
+                <span class="live"></span>
+                <span><span class="s-name">fix-ci</span><br><span class="s-proj">SwiftClaw</span></span>
+                <span class="go">attach →</span>
+              </button>
+              <button class="sess-item" onclick="show('project')">
+                <span class="live"></span>
+                <span><span class="s-name">design-drafts</span><br><span class="s-proj">ClaudeCommand</span></span>
+                <span class="go">attach →</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- PROJECT GRID -->
+        <div class="win col-projects">
+          <div class="titlebar">
+            <svg class="tb-ico" viewBox="0 0 16 16"><path d="M1.5 4.5h5l1.2 1.5h6.8v7.5h-13z" fill="none" stroke="#fff" stroke-width="1.4"/></svg>
+            <span class="tb-title">Projects — 6 items</span>
+            <div class="tb-dots"><span class="d-min">–</span><span class="d-max">▢</span><span class="d-close">×</span></div>
+          </div>
+          <div class="win-body">
+            <div class="projgrid">
+              <button class="pcard active-p" onclick="show('project')">
+                <span class="pbadge">2 LIVE</span>
+                <div class="ph"><span class="pico">◆</span><span class="pn">SwiftClaw</span></div>
+                <div class="pstatus"><span class="dot on"></span>2 sessions running · active 4m ago</div>
+              </button>
+              <button class="pcard" onclick="show('project')">
+                <span class="pbadge">1 LIVE</span>
+                <div class="ph"><span class="pico">▲</span><span class="pn">ClaudeCommand</span></div>
+                <div class="pstatus"><span class="dot on"></span>1 session running · active just now</div>
+              </button>
+              <button class="pcard">
+                <div class="ph"><span class="pico">✦</span><span class="pn">loafy-site</span></div>
+                <div class="pstatus"><span class="dot off"></span>idle · 2d ago</div>
+              </button>
+              <button class="pcard">
+                <div class="ph"><span class="pico">❋</span><span class="pn">kitten-api</span></div>
+                <div class="pstatus"><span class="dot off"></span>idle · 5d ago</div>
+              </button>
+              <button class="pcard">
+                <div class="ph"><span class="pico">⬡</span><span class="pn">dotfiles</span></div>
+                <div class="pstatus"><span class="dot off"></span>idle · 3w ago</div>
+              </button>
+              <button class="pcard">
+                <div class="ph"><span class="pico">◇</span><span class="pn">sandbox</span></div>
+                <div class="pstatus"><span class="dot off"></span>idle · 1mo ago</div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============ SCREEN 2: PROJECT VIEW ============ -->
+    <section class="screen" id="project">
+
+      <div class="proj-head">
+        <span class="ph-path"><span class="glyph">~/</span>Developer/SwiftClaw</span>
+        <div class="ph-meta">
+          <span class="chip"><b>●</b> 2 sessions running</span>
+          <span class="chip">last activity 4m ago</span>
+          <span class="chip">main · +84 −61</span>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab on"><span class="tdot"></span>refactor-parser</button>
+        <button class="tab"><span class="tdot"></span>fix-ci</button>
+        <button class="tab new">+ new session</button>
+      </div>
+
+      <div class="win term-win">
+        <div class="titlebar">
+          <svg class="tb-ico" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="#fff" stroke-width="1.4"/><path d="M4 6l2 1.5L4 9" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="tb-title">refactor-parser — claude ⌁ SwiftClaw</span>
+          <div class="tb-dots"><span class="d-min">–</span><span class="d-max">▢</span><span class="d-close">×</span></div>
+        </div>
+
+        <div class="term">
+<pre><span class="t-prompt">➜</span> <span class="t-user">claude</span>
+<span class="t-box">╭─ Claude Code v2.1 ── SwiftClaw ─╮</span>
+<span class="t-user">&gt;</span> refactor the parser to use a recursive descent approach
+
+<span class="t-dot">⏺</span> I'll refactor the parser. Let me look at the current implementation first.
+<span class="t-dot">⏺</span> <span class="t-tool">Read(Sources/SwiftClaw/Parser.swift)</span>
+  <span class="t-out">⎿ Read 240 lines</span>
+
+<span class="t-dot">⏺</span> The current parser uses a token-stack approach. I'll restructure it into
+  recursive descent with one function per grammar rule…
+
+<span class="t-dot">⏺</span> <span class="t-tool">Edit(Sources/SwiftClaw/Parser.swift)</span>
+  <span class="t-out">⎿ Updated Parser.swift with <span class="t-add">84 additions</span> and 61 removals</span>
+
+<span class="t-churn">✻ Churning… (esc to interrupt)</span></pre>
+        </div>
+
+        <div class="input-area">
+          <div class="attach">
+            <span class="att-chip"><span class="thumb"></span>📎 screenshot-2026-07-19.png <span class="x">×</span></span>
+          </div>
+          <div class="input-row">
+            <span class="caret">❯</span>
+            <span class="ph">paste an image or type a message</span>
+            <span class="cursor"></span>
+            <button class="send">SEND ⏎</button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </div><!-- /stage -->
+
+  <!-- ===== DOCK ===== -->
+  <div class="dock">
+    <button class="on" id="dock-dash" onclick="show('dashboard')" title="Dashboard">🖥️</button>
+    <button id="dock-proj" onclick="show('project')" title="Projects">📁</button>
+    <button onclick="return false" title="Skills">✨</button>
+    <button onclick="return false" title="Config">⚙️</button>
+    <button onclick="toggleTheme()" title="Theme">🌈</button>
+  </div>
+
+</div>
+
+<script>
+function show(id, el){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('show', s.id===id));
+  // menu bar
+  document.getElementById('nav-dash').classList.toggle('active', id==='dashboard');
+  document.getElementById('nav-proj').classList.toggle('active', id==='project');
+  // dock
+  document.getElementById('dock-dash').classList.toggle('on', id==='dashboard');
+  document.getElementById('dock-proj').classList.toggle('on', id==='project');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function toggleTheme(){
+  const root=document.documentElement;
+  const crimson = root.getAttribute('data-theme')==='crimson';
+  if(crimson){ root.removeAttribute('data-theme'); }
+  else { root.setAttribute('data-theme','crimson'); }
+  const now = root.getAttribute('data-theme')==='crimson';
+  document.getElementById('sw-blue').classList.toggle('on', !now);
+  document.getElementById('sw-red').classList.toggle('on', now);
+}
+</script>
+</body>
+</html>

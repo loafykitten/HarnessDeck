@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Command — Design Drafts (Round 2)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; box-sizing: border-box; }
+  body {
+    font: 14px/1.4 -apple-system, system-ui, sans-serif;
+    background: #0d0716; color: #e8e0f0;
+    display: flex; flex-direction: column; height: 100dvh;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 14px;
+    background: linear-gradient(90deg, #1a0b2e, #16072b 50%, #250a20);
+    border-bottom: 1px solid #3a1f5c;
+  }
+  header h1 { font-size: 15px; font-weight: 600; margin-right: 6px;
+    background: linear-gradient(90deg, #ff71ce, #7bdcff);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tabs button {
+    font: inherit; color: #cbb8e8; background: #221238;
+    border: 1px solid #3a1f5c; border-radius: 8px;
+    padding: 5px 12px; cursor: pointer;
+  }
+  .tabs button:hover { border-color: #ff71ce; }
+  .tabs button.active {
+    color: #fff; border-color: #ff71ce;
+    background: linear-gradient(135deg, #47135e, #1d2a63);
+    box-shadow: 0 0 10px #ff71ce55;
+  }
+  #meta { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  #title { color: #9d8bc0; font-size: 13px; }
+  #reload { font: inherit; background: none; border: 1px solid #3a1f5c;
+    color: #cbb8e8; border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+  #hint { color: #6b5a8a; font-size: 12px; }
+  iframe { flex: 1; border: 0; width: 100%; background: #0d0716; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Claude Command drafts · round 2</h1>
+  <nav class="tabs" id="tabs"></nav>
+  <div id="meta">
+    <span id="title"></span>
+    <button id="reload" title="Reload current draft">↻</button>
+    <span id="hint">keys 1–4, ←/→</span>
+  </div>
+</header>
+<iframe id="frame" title="draft preview"></iframe>
+<script>
+const designs = [
+  { n: 1, name: "★ Final", file: "design-final.html" },
+  { n: 2, name: "Polished Glass", file: "design-1.html" },
+  { n: 3, name: "Glow Maximal", file: "design-2.html" },
+  { n: 4, name: "Glass CRT", file: "design-3.html" },
+];
+const N = designs.length;
+const tabs = document.getElementById("tabs");
+const frame = document.getElementById("frame");
+const title = document.getElementById("title");
+let current = 1;
+
+designs.forEach(d => {
+  const b = document.createElement("button");
+  b.textContent = `${d.n} ${d.name}`;
+  b.onclick = () => show(d.n);
+  b.dataset.n = d.n;
+  tabs.appendChild(b);
+});
+
+function show(n) {
+  current = n;
+  const d = designs.find(x => x.n === n);
+  frame.src = d.file;
+  title.textContent = `#${n} ${d.name}`;
+  document.querySelectorAll(".tabs button").forEach(b =>
+    b.classList.toggle("active", +b.dataset.n === n));
+  location.hash = n;
+}
+
+document.getElementById("reload").onclick = () => { frame.src = frame.src; };
+
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  const k = +e.key;
+  if (k >= 1 && k <= N) show(k);
+  else if (e.key === "ArrowRight") show(current % N + 1);
+  else if (e.key === "ArrowLeft") show((current + N - 2) % N + 1);
+});
+
+show(Math.min(+location.hash.slice(1) || 1, N));
+</script>
+</body>
+</html>
