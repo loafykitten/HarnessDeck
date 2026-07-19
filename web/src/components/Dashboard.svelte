@@ -8,6 +8,14 @@
   const weekPct = $derived(app.usage?.limits?.weekly?.pct ?? null);
   const liveCount = $derived(app.sessions.length);
 
+  // daily token burn across the billing window
+  const burnDays = $derived(app.usage?.month?.days ?? []);
+  const burnMax = $derived(Math.max(...burnDays.map(d => d.tokens), 1));
+  let burnTip = $state<number | null>(null);
+  function fmtDay(iso: string): string {
+    return new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
   function remaining(iso: string | null): string {
     if (!iso) return "";
     const mins = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 60000));
@@ -97,6 +105,31 @@
       tokens · <b>{app.usage?.month ? fmtUSD(app.usage.month.costUSD) : "–"}</b> API-equivalent
       {#if app.usage?.month?.since}<br>since {fmtDate(app.usage.month.since)}{/if}
     </div>
+    {#if burnDays.length > 1}
+      <div class="burn" role="img"
+        aria-label="Daily token burn; peak {fmtTokens(burnMax)} on {fmtDay(burnDays.reduce((a, b) => b.tokens > a.tokens ? b : a).date)}">
+        {#each burnDays as d, i (d.date)}
+          <div class="burn-band" role="presentation"
+            onpointerenter={() => burnTip = i} onpointerleave={() => burnTip = null}>
+            {#if d.tokens > 0}
+              <i class:today={i === burnDays.length - 1} class:hot={i === burnTip}
+                style="height:{d.tokens / burnMax * 100}%"></i>
+            {/if}
+          </div>
+        {/each}
+        {#if burnTip !== null && burnDays[burnTip]}
+          <div class="burn-tip" style="left:clamp(46px, {(burnTip + 0.5) / burnDays.length * 100}%, calc(100% - 46px))">
+            <b>{fmtTokens(burnDays[burnTip].tokens)} tokens</b>
+            <span>{fmtDay(burnDays[burnTip].date)} · {fmtUSD(burnDays[burnTip].costUSD)}</span>
+          </div>
+        {/if}
+      </div>
+      <div class="burn-axis">
+        <span>{fmtDay(burnDays[0].date)}</span>
+        <span>peak {fmtTokens(burnMax)}/day</span>
+        <span>today</span>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -109,6 +142,7 @@
         <button class="sess-item" onclick={() => navigate({ view: "project", name: s.project, session: s.id })}>
           <div class="sess-ico" class:alt={i % 2 === 1}>{i % 2 === 0 ? "◈" : "⬡"}</div>
           <div class="sess-meta"><b>{s.project}</b><div class="s">active {fmtAgo(s.activity)}</div></div>
+          <span class="sess-status {s.status}"><i></i>{s.status === "waiting" ? "needs you" : s.status}</span>
           <span class="sess-tag">{s.name}</span>
           <span class="sess-go">›</span>
         </button>
@@ -135,3 +169,18 @@
     </div>
   </div>
 </div>
+
+<style>
+  /* session status chip — scoped here (not app.css) to keep merge surface
+     minimal while the theme overhaul is in flight */
+  .sess-status{display:inline-flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--ink-faint);padding:3px 9px;border-radius:999px;
+    background:var(--glass);border:1px solid var(--glass-brd);white-space:nowrap;flex-shrink:0}
+  .sess-status i{width:6px;height:6px;border-radius:50%;background:var(--ink-faint)}
+  .sess-status.working{color:var(--ok)}
+  .sess-status.working i{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:statuspulse 2s infinite}
+  .sess-status.waiting{color:var(--accent)}
+  .sess-status.waiting i{background:var(--accent);box-shadow:0 0 8px var(--accent);animation:statuspulse 1.1s infinite}
+  @keyframes statuspulse{0%,100%{opacity:1}50%{opacity:.45}}
+  @media (prefers-reduced-motion:reduce){.sess-status i{animation:none}}
+</style>
