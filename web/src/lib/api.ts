@@ -13,11 +13,11 @@ export interface Usage {
     weeklyModel: { pct: number; model: string } | null;
     plan: { label: string; renewsAt: string | null };
   } | null;
-  month: { month: string; totalTokens: number; costUSD: number } | null;
+  month: { month: string; since: string | null; totalTokens: number; costUSD: number } | null;
   errors: string[];
 }
 export interface Greeting { salutation: string; weather: string | null; whimsy: string }
-export interface AppConfig { displayName: string; zip: string; greetingEnabled: boolean }
+export interface AppConfig { displayName: string; zip: string; greetingEnabled: boolean; renewalDay: number | null }
 export interface SkillSummary { name: string; description: string; files: number; updated: number }
 export interface SkillDetail {
   name: string;

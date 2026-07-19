@@ -4,7 +4,7 @@ import { join, extname } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { listProjects } from "./projects";
 import { createSession, hasSession, killSession, listSessions, newlineIntoSession, typeIntoSession } from "./sessions";
-import { getLimits, getMonth } from "./usage";
+import { getLimits, getMonth, invalidateUsageCaches } from "./usage";
 import { getGreeting } from "./greeting";
 import {
   getAppConfig, setAppConfig,
@@ -152,7 +152,11 @@ const server = Bun.serve<WsData>({
 
       if (pathname === "/api/config/app") {
         if (req.method === "GET") return json(await getAppConfig());
-        if (req.method === "PUT") return json(await setAppConfig(await req.json()));
+        if (req.method === "PUT") {
+          const next = await setAppConfig(await req.json());
+          invalidateUsageCaches(); // renewalDay feeds plan + month widgets
+          return json(next);
+        }
       }
       if (pathname === "/api/config/settings") {
         if (req.method === "GET") return new Response(await readSettings(), { headers: { "content-type": "application/json" } });

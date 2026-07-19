@@ -91,10 +91,11 @@
   </div>
 
   <div class="glass glow card">
-    <h3>This month</h3>
+    <h3>{app.usage?.month?.since ? "This billing cycle" : "This month"}</h3>
     <div class="stat-big">{app.usage?.month ? fmtTokens(app.usage.month.totalTokens) : "–"}</div>
     <div class="stat-sub">
       tokens · <b>{app.usage?.month ? fmtUSD(app.usage.month.costUSD) : "–"}</b> API-equivalent
+      {#if app.usage?.month?.since}<br>since {fmtDate(app.usage.month.since)}{/if}
     </div>
   </div>
 </div>

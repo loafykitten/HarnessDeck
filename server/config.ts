@@ -10,12 +10,16 @@ export interface AppConfig {
   displayName: string;
   zip: string;          // US zip for weather; empty = no weather
   greetingEnabled: boolean;
+  renewalDay: number | null; // day-of-month the subscription renews (from
+                             // claude.ai billing — the API only exposes the
+                             // original subscription date, which goes stale)
 }
 
 const DEFAULT_APP_CONFIG: AppConfig = {
   displayName: "",
   zip: "",
   greetingEnabled: true,
+  renewalDay: null,
 };
 
 export async function getAppConfig(): Promise<AppConfig> {

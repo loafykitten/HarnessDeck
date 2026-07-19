@@ -1,7 +1,22 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { getAppConfig } from "./config";
 
 const CREDS_PATH = join(homedir(), ".claude", ".credentials.json");
+const DISK_CACHE = join(homedir(), ".config", "claude-command", "usage-cache.json");
+
+/** Last-good API responses survive restarts: the server restarts often
+    (KeepAlive, updates) and the OAuth endpoints 429 when hit cold each time. */
+async function diskCache(): Promise<Record<string, unknown>> {
+  try { return await Bun.file(DISK_CACHE).json(); } catch { return {}; }
+}
+async function saveDiskCache(key: string, value: unknown): Promise<void> {
+  const all = await diskCache();
+  all[key] = value;
+  await mkdir(dirname(DISK_CACHE), { recursive: true });
+  await Bun.write(DISK_CACHE, JSON.stringify(all));
+}
 
 export interface Limits {
   fiveHour: { pct: number | null; resetsAt: string | null };
@@ -40,6 +55,26 @@ function nextRenewal(createdIso: string): string {
   return next.toISOString();
 }
 
+/** Next/previous occurrence of a configured renewal day-of-month. Days past
+    a month's end clamp to its last day (renewalDay 31 → Feb 28). */
+function renewalFromDay(day: number, direction: "next" | "prev"): Date {
+  const now = new Date();
+  const clamp = (y: number, m: number) =>
+    new Date(y, m, Math.min(day, new Date(y, m + 1, 0).getDate()));
+  let d = clamp(now.getFullYear(), now.getMonth());
+  if (direction === "next" && d.getTime() <= now.getTime()) {
+    d = clamp(now.getFullYear(), now.getMonth() + 1);
+  } else if (direction === "prev" && d.getTime() > now.getTime()) {
+    d = clamp(now.getFullYear(), now.getMonth() - 1);
+  }
+  return d;
+}
+
+export function invalidateUsageCaches() {
+  limitsCache.at = 0;
+  monthCache.at = 0;
+}
+
 /** The credentials file's subscriptionType goes stale after plan changes —
     the profile endpoint is authoritative. */
 export async function getProfile(): Promise<Profile> {
@@ -49,6 +84,8 @@ export async function getProfile(): Promise<Profile> {
   });
   if (!res.ok) {
     if (profileCache.data) return profileCache.data;
+    const disk = (await diskCache()).profile as Profile | undefined;
+    if (disk) return disk;
     throw new Error(`oauth profile endpoint: HTTP ${res.status}`);
   }
   const j = await res.json();
@@ -71,6 +108,7 @@ export async function getProfile(): Promise<Profile> {
   };
   profileCache.at = Date.now();
   profileCache.data = data;
+  saveDiskCache("profile", data).catch(() => {});
   return data;
 }
 
@@ -81,27 +119,41 @@ export async function getLimits(): Promise<Limits> {
   });
   if (!res.ok) {
     if (limitsCache.data) return limitsCache.data; // serve stale over failing
+    const disk = (await diskCache()).limits as Limits | undefined;
+    if (disk) {
+      limitsCache.at = Date.now() - 30_000; // retry soon, but stop hammering
+      limitsCache.data = disk;
+      return disk;
+    }
     throw new Error(`oauth usage endpoint: HTTP ${res.status}`);
   }
   const j = await res.json();
   const scoped = (j.limits ?? []).find((l: any) => l.kind === "weekly_scoped");
   const profile = await getProfile().catch((): Profile =>
     ({ planLabel: "Claude", renewsAt: null, displayName: null }));
+  // configured renewal day wins — the API's subscription_created_at goes
+  // stale after plan changes
+  const cfg = await getAppConfig();
+  const renewsAt = cfg.renewalDay
+    ? renewalFromDay(cfg.renewalDay, "next").toISOString()
+    : profile.renewsAt;
   const data: Limits = {
     fiveHour: { pct: j.five_hour?.utilization ?? null, resetsAt: j.five_hour?.resets_at ?? null },
     weekly: { pct: j.seven_day?.utilization ?? null, resetsAt: j.seven_day?.resets_at ?? null },
     weeklyModel: scoped
       ? { pct: scoped.percent, model: scoped.scope?.model?.display_name ?? "model" }
       : null,
-    plan: { label: profile.planLabel, renewsAt: profile.renewsAt },
+    plan: { label: profile.planLabel, renewsAt },
   };
   limitsCache.at = Date.now();
   limitsCache.data = data;
+  saveDiskCache("limits", data).catch(() => {});
   return data;
 }
 
 export interface MonthUsage {
   month: string;
+  since: string | null; // billing-cycle start when renewalDay is configured
   totalTokens: number;
   costUSD: number; // API-equivalent, Claude models only
   models: { model: string; tokens: number; costUSD: number }[];
@@ -109,31 +161,58 @@ export interface MonthUsage {
 
 const monthCache: Cache<MonthUsage> = { at: 0, data: null };
 
+/** Sum Claude-model tokens/cost from a list of ccusage entries. */
+function sumClaudeModels(entries: any[]) {
+  const byModel = new Map<string, { tokens: number; costUSD: number }>();
+  for (const entry of entries) {
+    for (const m of entry.modelBreakdowns ?? []) {
+      if (!String(m.modelName).startsWith("claude")) continue;
+      const cur = byModel.get(m.modelName) ?? { tokens: 0, costUSD: 0 };
+      cur.tokens += (m.inputTokens ?? 0) + (m.outputTokens ?? 0) +
+                    (m.cacheCreationTokens ?? 0) + (m.cacheReadTokens ?? 0);
+      cur.costUSD += m.cost ?? 0;
+      byModel.set(m.modelName, cur);
+    }
+  }
+  return [...byModel.entries()].map(([model, v]) => ({ model, ...v }));
+}
+
 export async function getMonth(): Promise<MonthUsage> {
   if (monthCache.data && Date.now() - monthCache.at < 300_000) return monthCache.data;
-  const p = Bun.spawn(["bunx", "ccusage", "monthly", "--json"], {
-    stdout: "pipe", stderr: "ignore",
-  });
-  const out = await new Response(p.stdout).text();
-  await p.exited;
-  const j = JSON.parse(out);
-  const thisMonth = new Date().toISOString().slice(0, 7);
-  const entry = (j.monthly ?? []).find((m: any) => m.month === thisMonth)
-    ?? (j.monthly ?? []).at(-1);
-  if (!entry) throw new Error("ccusage returned no monthly data");
-  // Only count Claude models — ccusage also tracks codex/opencode agents.
-  const models = (entry.modelBreakdowns ?? [])
-    .filter((m: any) => String(m.modelName).startsWith("claude"))
-    .map((m: any) => ({
-      model: m.modelName,
-      tokens: (m.inputTokens ?? 0) + (m.outputTokens ?? 0) +
-              (m.cacheCreationTokens ?? 0) + (m.cacheReadTokens ?? 0),
-      costUSD: m.cost ?? 0,
-    }));
+  const cfg = await getAppConfig();
+  let entries: any[];
+  let since: string | null = null;
+  if (cfg.renewalDay) {
+    // subscription month: everything since the last renewal date
+    const start = renewalFromDay(cfg.renewalDay, "prev");
+    since = start.toISOString();
+    const ymd = `${start.getFullYear()}${String(start.getMonth() + 1).padStart(2, "0")}${String(start.getDate()).padStart(2, "0")}`;
+    const p = Bun.spawn(["bunx", "ccusage", "daily", "--since", ymd, "--json"], {
+      stdout: "pipe", stderr: "ignore",
+    });
+    const out = await new Response(p.stdout).text();
+    await p.exited;
+    entries = JSON.parse(out).daily ?? [];
+  } else {
+    // fallback: calendar month
+    const p = Bun.spawn(["bunx", "ccusage", "monthly", "--json"], {
+      stdout: "pipe", stderr: "ignore",
+    });
+    const out = await new Response(p.stdout).text();
+    await p.exited;
+    const j = JSON.parse(out);
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    const entry = (j.monthly ?? []).find((m: any) => m.month === thisMonth)
+      ?? (j.monthly ?? []).at(-1);
+    if (!entry) throw new Error("ccusage returned no monthly data");
+    entries = [entry];
+  }
+  const models = sumClaudeModels(entries);
   const data: MonthUsage = {
-    month: entry.month ?? thisMonth,
-    totalTokens: models.reduce((a: number, m: any) => a + m.tokens, 0),
-    costUSD: models.reduce((a: number, m: any) => a + m.costUSD, 0),
+    month: new Date().toISOString().slice(0, 7),
+    since,
+    totalTokens: models.reduce((a, m) => a + m.tokens, 0),
+    costUSD: models.reduce((a, m) => a + m.costUSD, 0),
     models,
   };
   monthCache.at = Date.now();
