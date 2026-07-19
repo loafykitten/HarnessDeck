@@ -84,6 +84,10 @@ export async function refreshGreeting() {
 export function startPolling() {
   refreshCore(); refreshUsage(); refreshGreeting();
   setInterval(refreshCore, 5_000);
-  setInterval(refreshUsage, 60_000);
+  setInterval(refreshUsage, 30_000); // server caches at 60s; 30s halves worst-case lag
   setInterval(refreshGreeting, 15 * 60_000);
+  // returning to the tab (throttled timers) → catch up immediately
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) { refreshCore(); refreshUsage(); }
+  });
 }

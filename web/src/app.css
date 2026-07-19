@@ -331,6 +331,22 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 .spark span{flex:1;border-radius:2px;background:linear-gradient(180deg,var(--accent),var(--accent-3));opacity:.82;
   box-shadow:0 0 8px rgba(var(--accent-rgb),.6)}
 
+/* daily token burn — single-hue columns, today in full accent */
+.burn{position:relative;display:flex;align-items:flex-end;gap:2px;height:64px;margin-top:16px;
+  border-bottom:1px solid rgba(255,255,255,.12)}
+.burn-band{flex:1 1 0;max-width:24px;height:100%;display:flex;align-items:flex-end}
+.burn-band i{display:block;width:100%;min-height:2px;border-radius:3px 3px 0 0;
+  background:rgba(var(--accent-rgb),.45);transition:height .5s ease,background .15s ease}
+.burn-band i.hot{background:var(--accent)}
+.burn-band i.today{background:var(--accent);box-shadow:0 0 10px rgba(var(--accent-rgb),.55)}
+.burn-tip{position:absolute;bottom:calc(100% + 8px);transform:translateX(-50%);pointer-events:none;z-index:5;
+  background:rgba(10,6,28,.94);border:1px solid var(--glass-brd);border-radius:9px;padding:7px 10px;
+  white-space:nowrap;display:flex;flex-direction:column;gap:2px}
+.burn-tip b{font-size:12.5px;color:var(--ink)}
+.burn-tip span{font-size:11px;color:var(--ink-dim)}
+.burn-axis{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-faint);
+  margin-top:7px;letter-spacing:.04em}
+
 /* ============ SESSIONS + PROJECTS ============ */
 .lower-grid{grid-template-columns:1fr 1.7fr;align-items:start}
 .sessions{padding:22px}

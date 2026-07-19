@@ -15,7 +15,10 @@ export interface Usage {
     weeklyModel: { pct: number; model: string } | null;
     plan: { label: string; renewsAt: string | null };
   } | null;
-  month: { month: string; since: string | null; totalTokens: number; costUSD: number } | null;
+  month: {
+    month: string; since: string | null; totalTokens: number; costUSD: number;
+    days: { date: string; tokens: number; costUSD: number }[];
+  } | null;
   errors: string[];
 }
 export interface Greeting { salutation: string; weather: string | null; whimsy: string }

@@ -164,6 +164,7 @@ export interface MonthUsage {
   totalTokens: number;
   costUSD: number; // API-equivalent, Claude models only
   models: { model: string; tokens: number; costUSD: number }[];
+  days: { date: string; tokens: number; costUSD: number }[]; // zero-filled, window start → today
 }
 
 const monthCache: Cache<MonthUsage> = { at: 0, data: null };
@@ -184,43 +185,46 @@ function sumClaudeModels(entries: any[]) {
   return [...byModel.entries()].map(([model, v]) => ({ model, ...v }));
 }
 
+const localYmd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 export async function getMonth(): Promise<MonthUsage> {
-  if (monthCache.data && Date.now() - monthCache.at < 300_000) return monthCache.data;
+  // 60s: short enough that the dashboard visibly ticks while sessions run
+  if (monthCache.data && Date.now() - monthCache.at < 60_000) return monthCache.data;
   const cfg = await getAppConfig();
-  let entries: any[];
-  let since: string | null = null;
-  if (cfg.renewalDay) {
-    // subscription month: everything since the last renewal date
-    const start = renewalFromDay(cfg.renewalDay, "prev");
-    since = start.toISOString();
-    const ymd = `${start.getFullYear()}${String(start.getMonth() + 1).padStart(2, "0")}${String(start.getDate()).padStart(2, "0")}`;
-    const p = Bun.spawn(["bunx", "ccusage", "daily", "--since", ymd, "--json"], {
-      stdout: "pipe", stderr: "ignore",
+  // window start: last renewal date when configured, else first of the calendar month
+  const now = new Date();
+  const start = cfg.renewalDay
+    ? renewalFromDay(cfg.renewalDay, "prev")
+    : new Date(now.getFullYear(), now.getMonth(), 1);
+  const p = Bun.spawn(
+    ["bunx", "ccusage", "daily", "--since", localYmd(start).replaceAll("-", ""), "--json"],
+    { stdout: "pipe", stderr: "ignore" },
+  );
+  const out = await new Response(p.stdout).text();
+  await p.exited;
+  const entries: any[] = JSON.parse(out).daily ?? [];
+
+  // per-day Claude-only series, zero-filled so the chart shows quiet days too
+  const byDay = new Map(entries.map(e => [String(e.period), sumClaudeModels([e])]));
+  const days: MonthUsage["days"] = [];
+  for (let d = new Date(start); d.getTime() <= now.getTime(); d.setDate(d.getDate() + 1)) {
+    const dayModels = byDay.get(localYmd(d)) ?? [];
+    days.push({
+      date: localYmd(d),
+      tokens: dayModels.reduce((a, m) => a + m.tokens, 0),
+      costUSD: dayModels.reduce((a, m) => a + m.costUSD, 0),
     });
-    const out = await new Response(p.stdout).text();
-    await p.exited;
-    entries = JSON.parse(out).daily ?? [];
-  } else {
-    // fallback: calendar month
-    const p = Bun.spawn(["bunx", "ccusage", "monthly", "--json"], {
-      stdout: "pipe", stderr: "ignore",
-    });
-    const out = await new Response(p.stdout).text();
-    await p.exited;
-    const j = JSON.parse(out);
-    const thisMonth = new Date().toISOString().slice(0, 7);
-    const entry = (j.monthly ?? []).find((m: any) => m.month === thisMonth)
-      ?? (j.monthly ?? []).at(-1);
-    if (!entry) throw new Error("ccusage returned no monthly data");
-    entries = [entry];
   }
+
   const models = sumClaudeModels(entries);
   const data: MonthUsage = {
     month: new Date().toISOString().slice(0, 7),
-    since,
+    since: cfg.renewalDay ? start.toISOString() : null,
     totalTokens: models.reduce((a, m) => a + m.tokens, 0),
     costUSD: models.reduce((a, m) => a + m.costUSD, 0),
     models,
+    days,
   };
   monthCache.at = Date.now();
   monthCache.data = data;
