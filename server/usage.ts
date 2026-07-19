@@ -112,7 +112,20 @@ export async function getProfile(): Promise<Profile> {
   return data;
 }
 
+/** Public API: cached limits with config-derived values applied at serve
+    time — never baked into the cache, where they'd go stale (learned the
+    hard way when a cached renewsAt outlived a renewalDay change). */
 export async function getLimits(): Promise<Limits> {
+  const base = await getLimitsRaw();
+  const cfg = await getAppConfig();
+  if (!cfg.renewalDay) return base;
+  return {
+    ...base,
+    plan: { ...base.plan, renewsAt: renewalFromDay(cfg.renewalDay, "next").toISOString() },
+  };
+}
+
+async function getLimitsRaw(): Promise<Limits> {
   if (limitsCache.data && Date.now() - limitsCache.at < 60_000) return limitsCache.data;
   const res = await fetch("https://api.anthropic.com/api/oauth/usage", {
     headers: await oauthHeaders(),
@@ -131,19 +144,13 @@ export async function getLimits(): Promise<Limits> {
   const scoped = (j.limits ?? []).find((l: any) => l.kind === "weekly_scoped");
   const profile = await getProfile().catch((): Profile =>
     ({ planLabel: "Claude", renewsAt: null, displayName: null }));
-  // configured renewal day wins — the API's subscription_created_at goes
-  // stale after plan changes
-  const cfg = await getAppConfig();
-  const renewsAt = cfg.renewalDay
-    ? renewalFromDay(cfg.renewalDay, "next").toISOString()
-    : profile.renewsAt;
   const data: Limits = {
     fiveHour: { pct: j.five_hour?.utilization ?? null, resetsAt: j.five_hour?.resets_at ?? null },
     weekly: { pct: j.seven_day?.utilization ?? null, resetsAt: j.seven_day?.resets_at ?? null },
     weeklyModel: scoped
       ? { pct: scoped.percent, model: scoped.scope?.model?.display_name ?? "model" }
       : null,
-    plan: { label: profile.planLabel, renewsAt },
+    plan: { label: profile.planLabel, renewsAt: profile.renewsAt },
   };
   limitsCache.at = Date.now();
   limitsCache.data = data;
