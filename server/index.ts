@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join, extname } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { listProjects } from "./projects";
-import { createSession, hasSession, killSession, listSessions, typeIntoSession } from "./sessions";
+import { createSession, hasSession, killSession, listSessions, newlineIntoSession, typeIntoSession } from "./sessions";
 import { getLimits, getMonth } from "./usage";
 import { getGreeting } from "./greeting";
 import {
@@ -175,6 +175,9 @@ const server = Bun.serve<WsData>({
   },
 
   websocket: {
+    // default is 120s — background tabs go quiet longer than that; client
+    // also pings every 30s as belt-and-suspenders
+    idleTimeout: 960,
     open(ws) {
       const pty = ptySpawn("tmux", ["attach", "-t", `=${ws.data.sessionId}`], {
         name: "xterm-256color",
@@ -194,18 +197,23 @@ const server = Bun.serve<WsData>({
       const pty = ws.data.pty;
       if (!pty) return;
       if (typeof msg === "string") {
-        // control frames are JSON strings; terminal input is sent as binary
-        try {
-          const m = JSON.parse(msg);
+        if (process.env.CC_WS_DEBUG) {
+          require("node:fs").appendFileSync("/tmp/cc-ws-debug.log", JSON.stringify(msg) + "\n");
+        }
+        let m: any = null;
+        try { m = JSON.parse(msg); } catch { /* raw input */ }
+        if (m && typeof m === "object") {
           if (m.type === "resize" && m.cols > 0 && m.rows > 0) {
             pty.resize(Math.min(m.cols, 500), Math.min(m.rows, 200));
-            return;
-          }
-          if (m.type === "input" && typeof m.data === "string") {
+          } else if (m.type === "input" && typeof m.data === "string") {
             pty.write(m.data);
-            return;
+          } else if (m.type === "newline") {
+            newlineIntoSession(ws.data.sessionId);
           }
-        } catch { /* not JSON — treat as raw input */ }
+          // anything else (e.g. keepalive pings) is deliberately ignored —
+          // never let stray JSON get typed into the terminal
+          return;
+        }
         pty.write(msg);
       } else {
         pty.write(new TextDecoder().decode(msg));

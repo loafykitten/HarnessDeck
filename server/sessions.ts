@@ -94,8 +94,20 @@ export async function hasSession(id: string): Promise<boolean> {
   return (await tmux("has-session", "-t", `=${id}`)).ok;
 }
 
-/** Type text into the session's input (no Enter), e.g. a pasted-image path. */
+/** Type text into the session's input (no Enter), e.g. a pasted-image path.
+    NB: send-keys takes a pane-style target — the '=' exact prefix is rejected. */
 export async function typeIntoSession(id: string, text: string): Promise<boolean> {
-  const res = await tmux("send-keys", "-t", `=${id}`, "-l", text);
+  if (!id.startsWith(PREFIX)) return false;
+  const res = await tmux("send-keys", "-t", `${id}:`, "-l", text);
+  return res.ok;
+}
+
+/** Insert a newline into claude's input box without submitting: a pane-side
+    bracketed paste of "\n". (Client-side paste brackets get mangled by tmux's
+    attach-client input parsing — pane-side injection is the reliable path.) */
+export async function newlineIntoSession(id: string): Promise<boolean> {
+  if (!id.startsWith(PREFIX)) return false;
+  const res = await tmux("send-keys", "-t", `${id}:`, "-H",
+    "1b", "5b", "32", "30", "30", "7e", "0a", "1b", "5b", "32", "30", "31", "7e");
   return res.ok;
 }

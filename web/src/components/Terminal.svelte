@@ -12,9 +12,13 @@
 
   let host: HTMLDivElement;
   let pasteFlash = $state("");
+  let reconnecting = $state(false);
   let term: Terminal | null = null;
   let fit: FitAddon | null = null;
   let ws: WebSocket | null = null;
+  let disposed = false;
+  let retryDelay = 1000;
+  let pingTimer: ReturnType<typeof setInterval> | null = null;
 
   function themeColors() {
     const css = getComputedStyle(document.documentElement);
@@ -27,10 +31,64 @@
     };
   }
 
+  let pending: string[] = [];
+  function sendInput(data: string) {
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "input", data }));
+    } else {
+      pending.push(data); // typed while (re)connecting — flush on open
+    }
+  }
+
   function doFit() {
-    if (!fit || !term || !ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!fit || !term || ws?.readyState !== WebSocket.OPEN) return;
     fit.fit();
-    ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+    ws!.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+  }
+
+  function connect() {
+    if (disposed) return;
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${proto}://${location.host}/ws/session/${encodeURIComponent(sessionId)}`);
+    ws.binaryType = "arraybuffer";
+    ws.onopen = () => {
+      reconnecting = false;
+      retryDelay = 1000;
+      doFit();
+      for (const data of pending.splice(0)) {
+        ws!.send(JSON.stringify({ type: "input", data }));
+      }
+      // keepalive: Bun closes idle sockets; background tabs throttle timers,
+      // so ping well inside the server's 960s window
+      pingTimer = setInterval(() => {
+        if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
+      }, 30_000);
+    };
+    ws.onmessage = (e) => {
+      term?.write(typeof e.data === "string" ? e.data : new Uint8Array(e.data));
+    };
+    ws.onclose = async () => {
+      if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+      if (disposed) return;
+      // Only declare the session dead if tmux says it's gone; otherwise this
+      // was a dropped socket (server restart, sleep, idle timeout) — reconnect.
+      const alive = await api.sessions()
+        .then(list => list.some(s => s.id === sessionId))
+        .catch(() => true); // can't reach server → assume alive, keep retrying
+      if (disposed) return;
+      if (!alive) {
+        term?.write("\r\n\x1b[2m— session ended —\x1b[0m\r\n");
+        onEnded?.();
+        return;
+      }
+      reconnecting = true;
+      setTimeout(() => {
+        if (disposed) return;
+        term?.reset(); // tmux repaints the full screen on attach
+        connect();
+      }, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 10_000);
+    };
   }
 
   onMount(() => {
@@ -47,21 +105,22 @@
     term.loadAddon(fit);
     term.open(host);
 
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${proto}://${location.host}/ws/session/${encodeURIComponent(sessionId)}`);
-    ws.binaryType = "arraybuffer";
-    ws.onopen = () => doFit();
-    ws.onmessage = (e) => {
-      term!.write(typeof e.data === "string" ? e.data : new Uint8Array(e.data));
-    };
-    ws.onclose = () => {
-      term?.write("\r\n\x1b[2m— session ended —\x1b[0m\r\n");
-      onEnded?.();
-    };
-
-    term.onData(d => {
-      if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "input", data: d }));
+    // Shift+Enter → newline as a bracketed paste of "\n", sent atomically.
+    // It must be ONE write: xterm auto-answers Claude's cursor-position
+    // queries on this same channel, and any multi-write encoding (\+CR with
+    // a gap, etc.) gets a query response interleaved and submits instead.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.key === "Enter" && e.shiftKey) {
+        // cancel EVERY event type: an uncancelled keypress makes xterm emit
+        // a stray "\r" right after ours, which submits the prompt
+        if (e.type === "keydown") sendInput("\x1b[200~\n\x1b[201~");
+        return false;
+      }
+      return true;
     });
+
+    term.onData(d => sendInput(d));
+    connect();
 
     // image paste → upload → backend types the temp-file path into claude
     const onPaste = async (e: ClipboardEvent) => {
@@ -90,6 +149,8 @@
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
     return () => {
+      disposed = true;
+      if (pingTimer) clearInterval(pingTimer);
       ro.disconnect();
       mo.disconnect();
       host.removeEventListener("paste", onPaste, true);
@@ -114,8 +175,10 @@
 {#if active}
   <div class="input-hint">
     <span><kbd>⌘V</kbd> paste image</span>
+    <span><kbd>⇧⏎</kbd> newline</span>
     <span><kbd>⏎</kbd> send</span>
     <span><kbd>esc</kbd> interrupt</span>
+    {#if reconnecting}<span class="paste-flash gen-spin">↻ reconnecting…</span>{/if}
     {#if pasteFlash}<span class="paste-flash">{pasteFlash}</span>{/if}
   </div>
 {/if}
