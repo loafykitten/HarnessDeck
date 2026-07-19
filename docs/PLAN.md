@@ -114,7 +114,9 @@ arbitrary code by design — it must never listen beyond 127.0.0.1.
 3. ✅ Frontend shell: rail nav, project view, terminal tabs, image paste
 4. ✅ Usage widgets — real OAuth limits (`~/.claude/.credentials.json` token →
    `api.anthropic.com/api/oauth/usage`) + ccusage monthly (Claude models only)
-5. ✅ Config view (greeting prefs, settings.json, CLAUDE.md) · ⬜ Skills view
+5. ✅ Config view (greeting prefs, settings.json, CLAUDE.md) · ✅ Skills view
+   (list/edit `~/.claude/skills`, install from git/zip URL, generate via
+   headless `claude -p` background job, delete)
 6. ✅ LaunchAgent (`com.fenn.claude-command`, RunAtLoad+KeepAlive,
    logs → `~/Library/Logs/claude-command.log`) · ⬜ polish pass
 

@@ -18,6 +18,17 @@ export interface Usage {
 }
 export interface Greeting { salutation: string; weather: string | null; whimsy: string }
 export interface AppConfig { displayName: string; zip: string; greetingEnabled: boolean }
+export interface SkillSummary { name: string; description: string; files: number; updated: number }
+export interface SkillDetail {
+  name: string;
+  frontmatter: Record<string, string>;
+  files: { path: string; size: number; mtime: number; editable: boolean }[];
+}
+export interface SkillJob {
+  id: string; skillName: string;
+  status: "running" | "done" | "error";
+  error?: string; startedAt: number;
+}
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
@@ -56,6 +67,27 @@ export const api = {
       `/api/sessions/${encodeURIComponent(sessionId)}/image`,
       { method: "POST", headers: { "content-type": blob.type || "image/png" }, body: blob },
     ),
+  skills: () => j<SkillSummary[]>("/api/skills"),
+  skill: (name: string) => j<SkillDetail>(`/api/skills/${encodeURIComponent(name)}`),
+  skillFile: (name: string, path: string) =>
+    fetch(`/api/skills/${encodeURIComponent(name)}/file?path=${encodeURIComponent(path)}`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); }),
+  saveSkillFile: (name: string, path: string, content: string) =>
+    j<{ ok: boolean }>(`/api/skills/${encodeURIComponent(name)}/file?path=${encodeURIComponent(path)}`,
+      { method: "PUT", body: content }),
+  deleteSkill: (name: string) =>
+    j<{ ok: boolean }>(`/api/skills/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  installSkill: (url: string) =>
+    j<{ installed: string[]; skipped: string[] }>("/api/skills/install", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+    }),
+  generateSkill: (name: string, prompt: string) =>
+    j<{ job: string }>("/api/skills/generate", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, prompt }),
+    }),
+  skillJob: (id: string) => j<SkillJob>(`/api/skills/jobs/${id}`),
 };
 
 export function fmtTokens(n: number): string {

@@ -12,13 +12,13 @@ export const app = $state({
 export type Route =
   | { view: "dash" }
   | { view: "project"; name: string; session?: string }
-  | { view: "skills" }
+  | { view: "skills"; name?: string }
   | { view: "config" };
 
 function parseRoute(hash: string): Route {
   const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
   if (parts[0] === "project" && parts[1]) return { view: "project", name: parts[1], session: parts[2] };
-  if (parts[0] === "skills") return { view: "skills" };
+  if (parts[0] === "skills") return { view: "skills", name: parts[1] };
   if (parts[0] === "config") return { view: "config" };
   return { view: "dash" };
 }
@@ -28,7 +28,9 @@ export function navigate(route: Route) {
   const hash =
     route.view === "project"
       ? `#/project/${encodeURIComponent(route.name)}${route.session ? "/" + encodeURIComponent(route.session) : ""}`
-      : route.view === "dash" ? "#/" : `#/${route.view}`;
+      : route.view === "skills" && route.name
+        ? `#/skills/${encodeURIComponent(route.name)}`
+        : route.view === "dash" ? "#/" : `#/${route.view}`;
   history.replaceState(null, "", hash);
 }
 

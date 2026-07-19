@@ -10,6 +10,10 @@ import {
   getAppConfig, setAppConfig,
   readSettings, writeSettings, readClaudeMd, writeClaudeMd,
 } from "./config";
+import {
+  listSkills, getSkill, readSkillFile, writeSkillFile, deleteSkill,
+  installFromUrl, generateSkill, getJob,
+} from "./skills";
 
 const PORT = 4553;
 const DIST = join(import.meta.dir, "..", "web", "dist");
@@ -99,6 +103,51 @@ const server = Bun.serve<WsData>({
 
       if (pathname === "/api/greeting" && req.method === "GET") {
         return json(await getGreeting());
+      }
+
+      // ---- Skills ----
+      if (pathname === "/api/skills" && req.method === "GET") {
+        return json(await listSkills());
+      }
+      if (pathname === "/api/skills/install" && req.method === "POST") {
+        const body = await req.json();
+        const res = await installFromUrl(String(body.url ?? ""));
+        return "error" in res ? err(res.error) : json(res);
+      }
+      if (pathname === "/api/skills/generate" && req.method === "POST") {
+        const body = await req.json();
+        const res = await generateSkill(String(body.name ?? ""), String(body.prompt ?? ""));
+        return "error" in res ? err(res.error) : json(res, 202);
+      }
+      const jobMatch = pathname.match(/^\/api\/skills\/jobs\/([^/]+)$/);
+      if (jobMatch && req.method === "GET") {
+        const job = getJob(jobMatch[1]);
+        return job ? json(job) : err("no such job", 404);
+      }
+      const skillFileMatch = pathname.match(/^\/api\/skills\/([^/]+)\/file$/);
+      if (skillFileMatch) {
+        const name = decodeURIComponent(skillFileMatch[1]);
+        const rel = url.searchParams.get("path") ?? "";
+        if (req.method === "GET") {
+          const text = await readSkillFile(name, rel);
+          return text === null ? err("no such file", 404)
+            : new Response(text, { headers: { "content-type": "text/plain; charset=utf-8" } });
+        }
+        if (req.method === "PUT") {
+          const ok = await writeSkillFile(name, rel, await req.text());
+          return ok ? json({ ok: true }) : err("write failed", 400);
+        }
+      }
+      const skillMatch = pathname.match(/^\/api\/skills\/([^/]+)$/);
+      if (skillMatch) {
+        const name = decodeURIComponent(skillMatch[1]);
+        if (req.method === "GET") {
+          const skill = await getSkill(name);
+          return skill ? json(skill) : err("no such skill", 404);
+        }
+        if (req.method === "DELETE") {
+          return (await deleteSkill(name)) ? json({ ok: true }) : err("delete failed", 404);
+        }
       }
 
       if (pathname === "/api/config/app") {
