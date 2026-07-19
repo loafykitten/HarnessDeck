@@ -74,9 +74,12 @@ export async function createSession(project: string, name: string): Promise<{ id
   const id = sessionId(project, name);
   const existing = await tmux("has-session", "-t", `=${id}`);
   if (existing.ok) return { error: `session already exists: ${id}` };
-  // Session runs claude directly: when claude exits, the session ends.
+  // Login + interactive zsh (sources ~/.zprofile and ~/.zshrc, so claude
+  // inherits the user's env vars) that execs claude: when claude exits, the
+  // shell — and with it the session — ends.
   const res = await tmux(
-    "new-session", "-d", "-s", id, "-c", dir, "-x", "220", "-y", "50", CLAUDE_BIN,
+    "new-session", "-d", "-s", id, "-c", dir, "-x", "220", "-y", "50",
+    "zsh", "-lic", `exec ${CLAUDE_BIN}`,
   );
   if (!res.ok) return { error: res.err.trim() || "tmux new-session failed" };
   // no '=' prefix: set-option's -t is a pane-style target that rejects it
