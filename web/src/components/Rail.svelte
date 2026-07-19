@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app, navigate, toggleTheme } from "../lib/state.svelte";
+  import { app, navigate, toggleTheme, gotoProjects } from "../lib/state.svelte";
 
   const isProjects = $derived(app.route.view === "project");
 </script>
@@ -26,23 +26,19 @@
   </div>
 
   <nav class="rail-nav">
-    <button class="rail-item" class:active={app.route.view === "dash"} data-tip="Dashboard" onclick={() => navigate({ view: "dash" })}>
+    <button class="rail-item" class:active={app.route.view === "dash"} data-tip="Dashboard ⌃1" onclick={() => navigate({ view: "dash" })}>
       <span class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span>
       <span class="lbl">Dashboard</span>
     </button>
-    <button class="rail-item" class:active={isProjects} data-tip="Projects"
-      onclick={() => {
-        const first = app.sessions[0]?.project ?? app.projects[0]?.name;
-        if (first) navigate({ view: "project", name: first });
-      }}>
+    <button class="rail-item" class:active={isProjects} data-tip="Projects ⌃2" onclick={gotoProjects}>
       <span class="ico"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
       <span class="lbl">Projects</span>
     </button>
-    <button class="rail-item" class:active={app.route.view === "skills"} data-tip="Skills" onclick={() => navigate({ view: "skills" })}>
+    <button class="rail-item" class:active={app.route.view === "skills"} data-tip="Skills ⌃3" onclick={() => navigate({ view: "skills" })}>
       <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 3l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 15.8 6.9 18 8 12.4 3.8 8.6 9.4 8z"/></svg></span>
       <span class="lbl">Skills</span>
     </button>
-    <button class="rail-item" class:active={app.route.view === "config"} data-tip="Config" onclick={() => navigate({ view: "config" })}>
+    <button class="rail-item" class:active={app.route.view === "config"} data-tip="Config ⌃4" onclick={() => navigate({ view: "config" })}>
       <span class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></span>
       <span class="lbl">Config</span>
     </button>

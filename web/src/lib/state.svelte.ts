@@ -8,6 +8,7 @@ export const app = $state({
   usage: null as Usage | null,
   greeting: null as Greeting | null,
   railExpanded: false,
+  lastProject: localStorage.getItem("cc-last-project"),
 });
 
 export type Route =
@@ -24,8 +25,16 @@ function parseRoute(hash: string): Route {
   return { view: "dash" };
 }
 
+function rememberProject(route: Route) {
+  if (route.view === "project") {
+    app.lastProject = route.name;
+    localStorage.setItem("cc-last-project", route.name);
+  }
+}
+
 export function navigate(route: Route) {
   app.route = route;
+  rememberProject(route);
   const hash =
     route.view === "project"
       ? `#/project/${encodeURIComponent(route.name)}${route.session ? "/" + encodeURIComponent(route.session) : ""}`
@@ -35,7 +44,19 @@ export function navigate(route: Route) {
   history.replaceState(null, "", hash);
 }
 
-window.addEventListener("hashchange", () => { app.route = parseRoute(location.hash); });
+window.addEventListener("hashchange", () => {
+  app.route = parseRoute(location.hash);
+  rememberProject(app.route);
+});
+
+/** Open the last active project, falling back to the busiest/first one. */
+export function gotoProjects() {
+  const name =
+    (app.lastProject && app.projects.some(p => p.name === app.lastProject) && app.lastProject)
+    || app.sessions[0]?.project
+    || app.projects[0]?.name;
+  if (name) navigate({ view: "project", name });
+}
 
 export function toggleTheme() {
   const r = document.documentElement;
@@ -82,6 +103,7 @@ export async function refreshGreeting() {
 }
 
 export function startPolling() {
+  rememberProject(app.route);
   refreshCore(); refreshUsage(); refreshGreeting();
   setInterval(refreshCore, 5_000);
   setInterval(refreshUsage, 30_000); // server caches at 60s; 30s halves worst-case lag

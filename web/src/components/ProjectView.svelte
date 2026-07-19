@@ -8,16 +8,17 @@
   const mySessions = $derived(app.sessions.filter(s => s.project === project));
   const projInfo = $derived(app.projects.find(p => p.name === project));
 
-  // Which session tab is open. Route may carry one; else first session.
-  let activeId = $state<string | null>(null);
-  $effect(() => {
+  // Which session tab is open. The route is the source of truth (hotkeys
+  // cycle tabs by navigating); an invalid/absent route session → first tab.
+  const activeId = $derived.by(() => {
     const routeSession = app.route.view === "project" ? app.route.session : undefined;
-    if (routeSession && mySessions.some(s => s.id === routeSession)) {
-      activeId = routeSession;
-    } else if (activeId === null || !mySessions.some(s => s.id === activeId)) {
-      activeId = mySessions[0]?.id ?? null;
-    }
+    if (routeSession && mySessions.some(s => s.id === routeSession)) return routeSession;
+    return mySessions[0]?.id ?? null;
   });
+
+  function selectTab(id: string) {
+    navigate({ view: "project", name: project, session: id });
+  }
 
   let naming = $state(false);
   let newName = $state("");
@@ -33,7 +34,7 @@
       naming = false;
       newName = "";
       await refreshCore();
-      activeId = id;
+      selectTab(id);
     } catch (e) {
       createError = e instanceof Error ? e.message : "failed";
     } finally {
@@ -69,8 +70,8 @@
     {#each mySessions as s (s.id)}
       <div class="tab" class:active={s.id === activeId}
         role="tab" tabindex="0" aria-selected={s.id === activeId}
-        onclick={() => activeId = s.id}
-        onkeydown={(e) => e.key === "Enter" && (activeId = s.id)}>
+        onclick={() => selectTab(s.id)}
+        onkeydown={(e) => e.key === "Enter" && selectTab(s.id)}>
         <span class="tdot {s.status}"></span>{s.name}
         <span class="tab-x" role="button" tabindex="0" aria-label="Kill session"
           onclick={(e) => { e.stopPropagation(); closeSession(s.id); }}

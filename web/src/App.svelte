@@ -1,5 +1,6 @@
 <script lang="ts">
   import { app, startPolling } from "./lib/state.svelte";
+  import { installHotkeys } from "./lib/hotkeys";
   import Rail from "./components/Rail.svelte";
   import Dashboard from "./components/Dashboard.svelte";
   import ProjectView from "./components/ProjectView.svelte";
@@ -7,6 +8,7 @@
   import SkillsView from "./components/SkillsView.svelte";
 
   startPolling();
+  installHotkeys();
 </script>
 
 <div class="bg"></div>
@@ -32,3 +34,11 @@
     {/if}
   </div>
 </main>
+
+<footer class="hotkey-bar">
+  <span><kbd>⌃1</kbd> dash</span>
+  <span><kbd>⌃2</kbd> projects · again to cycle</span>
+  <span><kbd>⌃3</kbd> skills</span>
+  <span><kbd>⌃4</kbd> config</span>
+  <span><kbd>⌃⇧[</kbd><kbd>⌃⇧]</kbd> session tabs</span>
+</footer>
