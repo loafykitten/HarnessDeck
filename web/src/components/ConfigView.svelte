@@ -2,18 +2,35 @@
   import { onMount } from "svelte";
   import { api, type AppConfig } from "../lib/api";
   import { refreshGreeting } from "../lib/state.svelte";
+  import JsonNode from "./JsonNode.svelte";
 
   let cfg = $state<AppConfig>({ displayName: "", zip: "", greetingEnabled: true, renewalDay: null });
   let settingsText = $state("");
+  let settingsObj = $state<unknown>(null);
+  let settingsMode = $state<"form" | "raw">("form");
   let claudeMd = $state("");
   let status = $state<Record<string, { ok: boolean; msg: string } | null>>({});
 
   onMount(async () => {
     const [c, s, m] = await Promise.allSettled([api.appConfig(), api.settingsText(), api.claudeMd()]);
     if (c.status === "fulfilled") cfg = c.value;
-    if (s.status === "fulfilled") settingsText = s.value;
+    if (s.status === "fulfilled") {
+      settingsText = s.value;
+      try { settingsObj = JSON.parse(settingsText); } catch { settingsMode = "raw"; }
+    }
     if (m.status === "fulfilled") claudeMd = m.value;
   });
+
+  function setSettingsMode(mode: "form" | "raw") {
+    if (mode === settingsMode) return;
+    if (mode === "raw") {
+      if (settingsObj !== null) settingsText = JSON.stringify(settingsObj, null, 2) + "\n";
+    } else {
+      try { settingsObj = JSON.parse(settingsText); }
+      catch { flash("settings", false, "invalid JSON — fix it before switching to form"); return; }
+    }
+    settingsMode = mode;
+  }
 
   function flash(key: string, ok: boolean, msg: string) {
     status[key] = { ok, msg };
@@ -28,9 +45,13 @@
     } catch (e) { flash("greeting", false, String(e)); }
   }
   async function saveSettings() {
-    try {
-      JSON.parse(settingsText);
-    } catch { flash("settings", false, "invalid JSON — not saved"); return; }
+    if (settingsMode === "form") {
+      settingsText = JSON.stringify(settingsObj, null, 2) + "\n";
+    } else {
+      try {
+        JSON.parse(settingsText);
+      } catch { flash("settings", false, "invalid JSON — not saved"); return; }
+    }
     try {
       await api.saveSettingsText(settingsText);
       flash("settings", true, "saved — applies to new sessions");
@@ -78,8 +99,20 @@
   </div>
 
   <div class="glass glow cfg-card">
-    <h3>~/.claude/settings.json</h3>
-    <textarea class="cfg-editor" bind:value={settingsText} spellcheck="false"></textarea>
+    <div class="cfg-head">
+      <h3>~/.claude/settings.json</h3>
+      <div class="je-modes">
+        <button class="je-mode" class:on={settingsMode === "form"} onclick={() => setSettingsMode("form")}>Form</button>
+        <button class="je-mode" class:on={settingsMode === "raw"} onclick={() => setSettingsMode("raw")}>Raw</button>
+      </div>
+    </div>
+    {#if settingsMode === "form" && settingsObj !== null}
+      <div class="je">
+        <JsonNode value={settingsObj} update={(v) => (settingsObj = v)} />
+      </div>
+    {:else}
+      <textarea class="cfg-editor" bind:value={settingsText} spellcheck="false"></textarea>
+    {/if}
     <button class="btn" onclick={saveSettings}>Save settings</button>
     {#if status.settings}<span class="cfg-status" class:ok={status.settings.ok} class:bad={!status.settings.ok}>{status.settings.msg}</span>{/if}
   </div>
