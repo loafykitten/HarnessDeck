@@ -172,8 +172,10 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
   background:radial-gradient(circle at 50% 0%,rgba(255,255,255,.05),transparent 55%)}
 
 @media (prefers-reduced-motion:reduce){
-  .bg,.orb,.crt,.glow::before,.bar i::after,.live-dot,.mini-dot.on,.tdot,
+  .bg,.orb,.crt,.glow::before,.bar i::before,.bar-glow,.bar-glow::before,
+  .live-dot,.mini-dot.on,.tdot,.stat-big,
   .mascot-roller,.mascot-wheel,.mascot-bubble,.mascot-hopper{animation:none !important}
+  .bar i,.bar-glow,.arc,.arc-glow{transition:none !important}
 }
 
 /* ============ GLASS + GLOW PRIMITIVE ============ */
@@ -196,20 +198,24 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
     0 0 46px -18px rgba(var(--accent-2-rgb),.45),
     inset 0 1px 0 var(--glass-brd-lit);
 }
+/* Whole-perimeter rotating border: a conic gradient whose start angle spins
+   via a registered custom property, so every edge glows at all times and the
+   color pattern orbits the card seamlessly (first and last stops match). */
+@property --bf{syntax:"<angle>";initial-value:0deg;inherits:false}
 .glow::before{
   content:"";position:absolute;inset:0;border-radius:inherit;padding:1.4px;pointer-events:none;
-  background:linear-gradient(120deg,
-     rgba(var(--accent-rgb),.9),
-     rgba(var(--accent-3-rgb),.75) 34%,
-     rgba(var(--accent-2-rgb),.9) 60%,
-     rgba(var(--accent-rgb),.9));
-  background-size:280% 280%;
-  animation:borderflow 9s linear infinite;
+  background:conic-gradient(from var(--bf),
+     rgba(var(--accent-rgb),1),
+     rgba(var(--accent-3-rgb),.85) 25%,
+     rgba(var(--accent-2-rgb),1) 50%,
+     rgba(var(--accent-3-rgb),.85) 75%,
+     rgba(var(--accent-rgb),1));
+  animation:borderflow 3.5s linear infinite;
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
   -webkit-mask-composite:xor;mask-composite:exclude;
-  filter:drop-shadow(0 0 5px rgba(var(--accent-rgb),.35));
+  filter:drop-shadow(0 0 8px rgba(var(--accent-rgb),.55));
 }
-@keyframes borderflow{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+@keyframes borderflow{to{--bf:360deg}}
 .glow::after{
   content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
   background:var(--gloss);opacity:.75;
@@ -336,8 +342,15 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 .card-sub{font-size:13px;color:var(--ink-dim);margin-top:6px}
 
 .ring-card{display:flex;gap:22px;align-items:center}
-.ring{position:relative;width:126px;height:126px;flex:none}
-.ring svg{transform:rotate(-90deg)}
+.ring{position:relative;width:126px;height:126px;flex:none;isolation:isolate}
+.ring svg{transform:rotate(-90deg);overflow:visible}
+/* Soft backdrop disc gives the arc's bloom contrast against the card's bright
+   wash. Ring glow + gradient motion live in the SVG itself (native SVG blur
+   filter + SMIL attribute animation) because WebKit ignores CSS filters on
+   SVG elements and SMIL gradientTransform animation. */
+.ring::before{content:"";position:absolute;inset:-10px;border-radius:50%;z-index:-1;
+  background:radial-gradient(circle,rgba(8,6,26,.38) 42%,transparent 70%)}
+.arc,.arc-glow{transition:stroke-dashoffset .6s ease}
 .ring .val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .ring .val b{font-size:34px;font-weight:800;line-height:1;letter-spacing:-.02em;
   background:linear-gradient(120deg,var(--num-hi),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent;
@@ -356,21 +369,36 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 .bar-label{display:flex;justify-content:space-between;align-items:baseline;margin-top:12px;
   font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
 .bar-label b{color:var(--ink-dim);font-family:ui-monospace,monospace;font-size:11.5px;letter-spacing:0}
-.bar{height:13px;border-radius:999px;background:var(--ring-track);overflow:hidden;position:relative;margin-top:7px;
+.bar{height:13px;border-radius:999px;background:var(--ring-track);position:relative;margin-top:7px;
   box-shadow:inset 0 1px 2px rgba(0,0,0,.45)}
 .bar.sub{height:9px}
-.bar i.alt{background:linear-gradient(90deg,var(--accent-3),var(--accent-2));
-  box-shadow:0 0 14px var(--accent-3),0 0 22px -4px rgba(var(--accent-2-rgb),.7)}
+/* Bars, per spec: the VALUE is an animated gradient; it carries a power glow
+   that must not bleed into other UI; the track/shell itself never glows; and
+   no UI event may reset the animation.
+   Mechanism: an oversized palindromic repeating gradient slides via
+   transform (compositor-smooth in WebKit, unlike background-position;
+   seamless because it moves exactly one 160px period per loop; palindromic
+   stops so the period boundary has no slope seam). The glow is a blurred
+   sibling width-locked to the value, breathing via opacity (cheap), and
+   .bar-frame clips the halo before it can reach the labels. */
+.bar-frame{overflow:hidden;padding:10px 14px;margin:-10px -14px}
+.bar i.alt{background:linear-gradient(90deg,var(--accent-3),var(--accent-2))}
 .bar i{display:block;height:100%;border-radius:999px;position:relative;overflow:hidden;
   background:linear-gradient(90deg,var(--accent),var(--accent-2));
-  box-shadow:0 0 18px var(--accent),0 0 28px -4px rgba(var(--accent-2-rgb),.7);
   transition:width .6s ease}
-/* Seamless shimmer: the repeating gradient translates exactly one period per
-   loop, so the wrap is invisible — no periodic "reset" of the glint. */
-.bar i::after{content:"";position:absolute;top:0;bottom:0;left:-100%;width:200%;
-  background:repeating-linear-gradient(90deg,transparent 0,rgba(255,255,255,.45) 25%,transparent 50%);
-  animation:sheen 3s linear infinite}
-@keyframes sheen{to{transform:translateX(50%)}}
+.bar-glow{position:absolute;top:-2px;bottom:-2px;left:0;border-radius:999px;overflow:hidden;
+  filter:blur(7px) saturate(1.4);
+  transition:width .6s ease;
+  animation:barbreathe 2s ease-in-out -1s infinite}
+.bar i::before,.bar-glow::before{content:"";position:absolute;top:0;bottom:0;
+  left:-160px;width:calc(100% + 320px);
+  background:repeating-linear-gradient(90deg,var(--accent) 0,var(--accent-3) 40px,
+    var(--accent-2) 80px,var(--accent-3) 120px,var(--accent) 160px);
+  animation:barslide 3s linear infinite}
+.bar i.alt::before,.bar-glow.alt::before{background:repeating-linear-gradient(90deg,
+  var(--accent-3) 0,var(--accent-2) 80px,var(--accent-3) 160px)}
+@keyframes barslide{to{transform:translate3d(160px,0,0)}}
+@keyframes barbreathe{0%,100%{opacity:.65}50%{opacity:1}}
 .reset{font-size:11.5px;color:var(--ink-faint);margin-top:11px}
 .reset b{color:var(--ink)}
 
@@ -729,15 +757,20 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
     inset 0 1px 0 var(--glass-brd-lit);
 }
 :root[data-theme="aero"] .glow::after{opacity:1}
-/* rim becomes a soft water shimmer: white-biased, no neon halo */
+/* rim becomes a soft water shimmer: white-biased, no neon halo; conic from
+   --bf so the borderflow rotation still animates it */
 :root[data-theme="aero"] .glow::before{
   filter:none;
-  background:linear-gradient(120deg,
+  background:conic-gradient(from var(--bf),
     rgba(var(--accent-rgb),.5),
     rgba(255,255,255,.9) 34%,
     rgba(var(--accent-2-rgb),.45) 60%,
+    rgba(255,255,255,.85) 80%,
     rgba(var(--accent-rgb),.5));
-  background-size:280% 280%;
+}
+/* light theme gets a light ring well, not the dark neon socket */
+:root[data-theme="aero"] .ring::before{
+  background:radial-gradient(circle,rgba(255,255,255,.5) 42%,transparent 70%);
 }
 
 /* frosted white rail */

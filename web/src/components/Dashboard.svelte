@@ -4,8 +4,14 @@
 
   const RING_C = 333; // 2πr for r=53
 
-  const fivePct = $derived(app.usage?.limits?.fiveHour?.pct ?? null);
-  const weekPct = $derived(app.usage?.limits?.weekly?.pct ?? null);
+  // SMIL animations ignore the reduced-motion media query, so gate them here.
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const clampPct = (p: number | null | undefined) =>
+    p == null ? null : Math.max(0, Math.min(100, p));
+  const fivePct = $derived(clampPct(app.usage?.limits?.fiveHour?.pct));
+  const weekPct = $derived(clampPct(app.usage?.limits?.weekly?.pct));
+  const modelPct = $derived(clampPct(app.usage?.limits?.weeklyModel?.pct));
   const liveCount = $derived(app.sessions.length);
 
   // Stable render order: the server sorts sessions by activity, which reshuffles
@@ -69,15 +75,32 @@
       <svg width="126" height="126" viewBox="0 0 126 126">
         <defs>
           <linearGradient id="rg" x1="0" y1="0" x2="1" y2="1">
+            {#if !reduceMotion}
+              <animate attributeName="x1" values="0;1;1;0;0" dur="3s" repeatCount="indefinite"/>
+              <animate attributeName="y1" values="0;0;1;1;0" dur="3s" repeatCount="indefinite"/>
+              <animate attributeName="x2" values="1;0;0;1;1" dur="3s" repeatCount="indefinite"/>
+              <animate attributeName="y2" values="1;1;0;0;1" dur="3s" repeatCount="indefinite"/>
+            {/if}
             <stop offset="0" stop-color="var(--accent)"/>
+            <stop offset="0.5" stop-color="var(--accent-3)"/>
             <stop offset="1" stop-color="var(--accent-2)"/>
           </linearGradient>
+          <filter id="arcglow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="4">
+              {#if !reduceMotion}
+                <animate attributeName="stdDeviation" values="3;8;3" dur="2s" repeatCount="indefinite"/>
+              {/if}
+            </feGaussianBlur>
+          </filter>
         </defs>
         <circle cx="63" cy="63" r="53" fill="none" stroke="var(--ring-track)" stroke-width="13"/>
-        <circle cx="63" cy="63" r="53" fill="none" stroke="url(#rg)" stroke-width="13" stroke-linecap="round"
+        <circle class="arc-glow" cx="63" cy="63" r="53" fill="none" stroke="url(#rg)" stroke-width="16" stroke-linecap="round"
+          filter="url(#arcglow)"
           stroke-dasharray={RING_C}
-          stroke-dashoffset={RING_C * (1 - (fivePct ?? 0) / 100)}
-          style="filter:drop-shadow(0 0 8px var(--accent));transition:stroke-dashoffset .6s ease"/>
+          stroke-dashoffset={RING_C * (1 - (fivePct ?? 0) / 100)}/>
+        <circle class="arc" cx="63" cy="63" r="53" fill="none" stroke="url(#rg)" stroke-width="13" stroke-linecap="round"
+          stroke-dasharray={RING_C}
+          stroke-dashoffset={RING_C * (1 - (fivePct ?? 0) / 100)}/>
       </svg>
       <div class="val"><b>{fivePct ?? "–"}%</b><small>USED</small></div>
     </div>
@@ -97,10 +120,10 @@
     <div class="bar-wrap">
       <div class="bar-num">{weekPct ?? "–"}<span>%</span></div>
       <div class="bar-label"><span>all models</span><b>{weekPct ?? "–"}%</b></div>
-      <div class="bar"><i style="width:{weekPct ?? 0}%"></i></div>
+      <div class="bar-frame"><div class="bar"><span class="bar-glow" style="width:{weekPct ?? 0}%"></span><i style="width:{weekPct ?? 0}%"></i></div></div>
       {#if app.usage?.limits?.weeklyModel}
         <div class="bar-label"><span>{app.usage.limits.weeklyModel.model}</span><b>{app.usage.limits.weeklyModel.pct}%</b></div>
-        <div class="bar sub"><i class="alt" style="width:{app.usage.limits.weeklyModel.pct}%"></i></div>
+        <div class="bar-frame"><div class="bar sub"><span class="bar-glow alt" style="width:{modelPct ?? 0}%"></span><i class="alt" style="width:{modelPct ?? 0}%"></i></div></div>
       {/if}
       <div class="reset">Resets <b>{fmtClock(app.usage?.limits?.weekly?.resetsAt ?? null)}</b></div>
     </div>
