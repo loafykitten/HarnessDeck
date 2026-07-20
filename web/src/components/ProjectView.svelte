@@ -50,6 +50,8 @@
   }
 
   const activeSession = $derived(mySessions.find(s => s.id === activeId));
+
+  const STATUS_LABEL = { working: "working", waiting: "needs you", idle: "idle" } as const;
 </script>
 
 <div class="glass glow pv-head">
@@ -67,13 +69,17 @@
 </div>
 
 <div class="term-wrap">
-  <div class="tabs">
+  <div class="tabs" role="tablist" aria-orientation="vertical">
     {#each mySessions as s (s.id)}
       <div class="tab" class:active={s.id === activeId}
         role="tab" tabindex="0" aria-selected={s.id === activeId}
         onclick={() => selectTab(s.id)}
         onkeydown={(e) => e.key === "Enter" && selectTab(s.id)}>
-        <span class="tdot {s.status}"></span>{s.name}
+        <span class="tdot {s.status}"></span>
+        <span class="tab-info">
+          <span class="tab-name">{s.name}</span>
+          <span class="tab-meta"><span class="st {s.status}">{STATUS_LABEL[s.status]}</span> · {fmtAgo(s.activity)}</span>
+        </span>
         <span class="tab-x" role="button" tabindex="0" aria-label="Kill session"
           onclick={(e) => { e.stopPropagation(); closeSession(s.id); }}
           onkeydown={(e) => e.key === "Enter" && (e.stopPropagation(), closeSession(s.id))}>✕</span>
@@ -94,28 +100,30 @@
     {#if createError}<div class="tab" style="color:#ff5f57">{createError}</div>{/if}
   </div>
 
-  {#if mySessions.length > 0}
-    <div class="glass term">
-      <div class="term-bar">
-        <div class="tl"><i></i><i></i><i></i></div>
-        <span class="tt">{activeSession?.name ?? ""} — claude</span>
-        <span class="rt">{project}</span>
+  <div class="term-col">
+    {#if mySessions.length > 0}
+      <div class="glass term">
+        <div class="term-bar">
+          <div class="tl"><i></i><i></i><i></i></div>
+          <span class="tt">{activeSession?.name ?? ""} — claude</span>
+          <span class="rt">{project}</span>
+        </div>
+        {#each mySessions as s (s.id)}
+          <Terminal sessionId={s.id} active={s.id === activeId} onEnded={refreshCore} />
+        {/each}
       </div>
-      {#each mySessions as s (s.id)}
-        <Terminal sessionId={s.id} active={s.id === activeId} onEnded={refreshCore} />
-      {/each}
-    </div>
-  {:else}
-    <div class="glass term">
-      <div class="pv-empty">
-        <div class="big">No sessions in {project} yet</div>
-        <div>Spin one up — it runs in tmux and survives restarts.</div>
-        <button class="btn" onclick={() => { naming = true; }}>+ Start a session</button>
+    {:else}
+      <div class="glass term">
+        <div class="pv-empty">
+          <div class="big">No sessions in {project} yet</div>
+          <div>Spin one up — it runs in tmux and survives restarts.</div>
+          <button class="btn" onclick={() => { naming = true; }}>+ Start a session</button>
+        </div>
       </div>
-    </div>
-  {/if}
+    {/if}
 
-  {#if mySessions.length > 0}
-    <Mascot />
-  {/if}
+    {#if mySessions.length > 0}
+      <Mascot />
+    {/if}
+  </div>
 </div>
