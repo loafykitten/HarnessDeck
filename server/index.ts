@@ -6,6 +6,7 @@ import { listProjects } from "./projects";
 import { createSession, hasSession, killSession, listSessions, newlineIntoSession, typeIntoSession } from "./sessions";
 import { getLimits, getMonth, invalidateUsageCaches } from "./usage";
 import { getGreeting } from "./greeting";
+import { getUpdateStatus, startUpdate } from "./updates";
 import {
   getAppConfig, setAppConfig,
   readSettings, writeSettings, readClaudeMd, writeClaudeMd,
@@ -104,6 +105,15 @@ const server = Bun.serve<WsData>({
 
       if (pathname === "/api/greeting" && req.method === "GET") {
         return json(await getGreeting());
+      }
+
+      // ---- Claude Code updates ----
+      if (pathname === "/api/updates" && req.method === "GET") {
+        return json(await getUpdateStatus(url.searchParams.get("refresh") === "1"));
+      }
+      if (pathname === "/api/updates/apply" && req.method === "POST") {
+        const res = startUpdate();
+        return "error" in res ? err(res.error, 409) : json(res, 202);
       }
 
       // ---- Skills ----

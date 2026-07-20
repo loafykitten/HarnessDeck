@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app, navigate } from "../lib/state.svelte";
+  import { app, applyUpdate, navigate, refreshUpdate } from "../lib/state.svelte";
   import { fmtAgo, fmtClock, fmtDate, fmtTokens, fmtUSD, initials, projectGradient } from "../lib/api";
 
   const RING_C = 333; // 2πr for r=53
@@ -30,6 +30,39 @@
     return new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
 
+  // ---- Claude Code updater ----
+  const upd = $derived(app.update);
+  const job = $derived(app.update?.job ?? null);
+  const updating = $derived(job?.status === "running");
+  // A finished run stays on screen briefly so the outcome is seen, then the
+  // widget falls back to the plain version line. Both outcomes are age-gated:
+  // the server keeps the last job forever, so an ungated failure would pin the
+  // chip to "Update failed" for the life of the process. (refreshUpdate
+  // schedules a re-fetch at the end of the window — Date.now() isn't reactive.)
+  const jobFresh = $derived(!!job?.finishedAt && app.jobDisplayUntil !== null);
+  const justUpdated = $derived(job?.status === "done" && jobFresh);
+  const updateFailed = $derived(job?.status === "error" && jobFresh);
+  const canUpdate = $derived(!!upd?.updateAvailable && !updating);
+
+  const updText = $derived(
+    updating ? `Updating to ${upd?.latest ?? "the latest version"}…`
+      : updateFailed ? "Update failed"
+      : justUpdated ? (upd?.installed ? `Updated to ${upd.installed}` : "Update complete")
+      : upd?.updateAvailable ? `Claude Code ${upd.latest} available`
+      : upd?.installed ? `Claude Code ${upd.installed}`
+      : app.updateChecking ? "Checking…"
+      : "Version unknown",
+  );
+
+  const updTitle = $derived(
+    updating ? "Running claude update — running sessions keep their current version until they restart."
+      : updateFailed ? `claude update failed:\n${job?.output ?? ""}`
+      : upd?.error ? upd.error
+      : upd?.updateAvailable ? `You're on ${upd.installed}. Click Update to install ${upd.latest}.`
+      : upd ? `Up to date · checked ${fmtAgo(upd.checkedAt)}`
+      : "Checking for a newer Claude Code",
+  );
+
   function remaining(iso: string | null): string {
     if (!iso) return "";
     const mins = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 60000));
@@ -59,6 +92,22 @@
   </div>
   <div class="head-side">
     <span class="pill live"><span class="live-dot"></span> {liveCount} session{liveCount === 1 ? "" : "s"} live</span>
+
+    <div class="pill upd" class:ready={upd?.updateAvailable} class:busy={updating}
+      class:failed={updateFailed} class:fresh={justUpdated} title={updTitle}>
+      <span class="upd-dot"></span>
+      <span class="upd-text">{updText}</span>
+      {#if canUpdate}
+        <button class="upd-go" onclick={applyUpdate}>Update</button>
+      {/if}
+      <button class="upd-check" onclick={() => refreshUpdate(true)} disabled={app.updateChecking || updating}
+        aria-label="Check for updates now">
+        <svg class:spin={app.updateChecking || updating} viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 4v7h-7"/>
+        </svg>
+      </button>
+    </div>
     <div class="plan-card glass lit">
       <span class="pk">Plan</span>
       <span class="plan-badge"><span class="spk"></span><b>{app.usage?.limits?.plan?.label ?? "Claude"}</b></span>
@@ -202,6 +251,34 @@
 </div>
 
 <style>
+  /* Claude Code updater chip — quiet at rest, lit when an update is waiting */
+  .upd{gap:9px;padding-right:6px;color:var(--ink-dim)}
+  .upd-dot{width:7px;height:7px;border-radius:50%;background:var(--ink-faint);flex-shrink:0}
+  .upd-text{white-space:nowrap}
+  .upd.ready{border-color:var(--glass-brd-lit);color:var(--ink);
+    box-shadow:0 0 22px -8px rgba(var(--accent-rgb),.75)}
+  .upd.ready .upd-dot{background:var(--accent);box-shadow:0 0 10px var(--accent);animation:pulse 2s infinite}
+  .upd.busy .upd-dot,.upd.fresh .upd-dot{background:var(--ok);box-shadow:0 0 10px var(--ok)}
+  .upd.busy .upd-dot{animation:pulse 1.1s infinite}
+  .upd.failed .upd-dot{background:var(--accent-2);box-shadow:0 0 10px var(--accent-2)}
+
+  .upd-go{font:inherit;font-size:11px;font-weight:700;letter-spacing:.04em;cursor:pointer;
+    padding:4px 11px;border-radius:999px;border:1px solid transparent;color:#fff;
+    background:linear-gradient(135deg,var(--accent),var(--accent-3));
+    box-shadow:0 0 16px -6px rgba(var(--accent-rgb),.9)}
+  .upd-go:hover{filter:brightness(1.12)}
+
+  .upd-check{display:grid;place-items:center;width:24px;height:24px;padding:0;cursor:pointer;
+    border:0;border-radius:50%;background:transparent;color:var(--ink-faint)}
+  .upd-check svg{width:14px;height:14px}
+  .upd-check:hover:not(:disabled){color:var(--ink);background:var(--glass-2)}
+  .upd-check:disabled{cursor:default}
+  .upd-check svg.spin{animation:updspin 1s linear infinite}
+  @keyframes updspin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){
+    .upd-check svg.spin,.upd.ready .upd-dot,.upd.busy .upd-dot{animation:none}
+  }
+
   /* session status chip — colors ride the theme tokens, so all skins
      (default/crimson/aero) restyle it for free */
   .sess-status{display:inline-flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.08em;

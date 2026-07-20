@@ -22,6 +22,16 @@ export interface Usage {
   errors: string[];
 }
 export interface Greeting { salutation: string; weather: string | null; whimsy: string }
+export interface UpdateJob {
+  status: "running" | "done" | "error";
+  startedAt: number; finishedAt: number | null;
+  from: string | null; output: string;
+}
+export interface UpdateStatus {
+  installed: string | null; latest: string | null;
+  updateAvailable: boolean; checkedAt: number;
+  error: string | null; job: UpdateJob | null;
+}
 export interface AppConfig { displayName: string; zip: string; greetingEnabled: boolean; renewalDay: number | null }
 export interface SkillSummary { name: string; description: string; files: number; updated: number }
 export interface SkillDetail {
@@ -54,6 +64,8 @@ export const api = {
     j<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   usage: () => j<Usage>("/api/usage"),
   greeting: () => j<Greeting>("/api/greeting"),
+  updates: (force = false) => j<UpdateStatus>(`/api/updates${force ? "?refresh=1" : ""}`),
+  applyUpdate: () => j<UpdateJob>("/api/updates/apply", { method: "POST" }),
   appConfig: () => j<AppConfig>("/api/config/app"),
   saveAppConfig: (cfg: Partial<AppConfig>) =>
     j<AppConfig>("/api/config/app", {
