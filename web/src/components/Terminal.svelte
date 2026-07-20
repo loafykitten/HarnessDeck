@@ -129,6 +129,14 @@
         if (e.type === "keydown") sendInput("\x1b[200~\n\x1b[201~");
         return false;
       }
+      // ⌘Left / ⌘Right → readline start / end. Cancel every event type
+      // so neither xterm nor the browser handles a stray follow-up event.
+      if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey &&
+          (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        e.preventDefault();
+        if (e.type === "keydown") sendInput(e.key === "ArrowLeft" ? "\x01" : "\x05");
+        return false;
+      }
       // Copy the terminal selection on ⌘C / ⌃C. xterm's selection is a render
       // overlay, not a DOM selection, so the browser's native copy grabs
       // nothing — we do it by hand. With no selection, ⌃C falls through to
