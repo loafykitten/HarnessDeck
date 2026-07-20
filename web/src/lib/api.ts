@@ -13,6 +13,11 @@ export interface SessionInfo {
 export interface ProjectInfo {
   name: string; dir: string; lastActivity: number | null;
   sessions: { id: string; name: string; activity: number; harness: HarnessId }[];
+  git?: {
+    branch: string; ahead: number | null; dirty: number;
+    branches: string[];
+    worktrees: { branch: string; path: string }[];
+  } | null;
 }
 export interface MonthUsage {
   month: string; since: string | null; totalTokens: number; costUSD: number;

@@ -89,6 +89,21 @@
       <span class="pill"><span class="live-dot"></span> {mySessions.length} session{mySessions.length === 1 ? "" : "s"} running</span>
     {/if}
     <span class="pill">last activity {fmtAgo(projInfo?.lastActivity ?? null)}</span>
+    {#if projInfo?.git?.branch && !["main", "master", "HEAD"].includes(projInfo.git.branch)}
+      <span class="pill mono">{projInfo.git.branch}</span>
+    {/if}
+    {#if projInfo?.git?.ahead && projInfo.git.ahead > 0}
+      <span class="pill" style="color:var(--accent)">↑{projInfo.git.ahead} to push</span>
+    {/if}
+    {#if projInfo?.git?.dirty && projInfo.git.dirty > 0}
+      <span class="pill">{projInfo.git.dirty} uncommitted</span>
+    {/if}
+    {#if projInfo?.git?.branches.length}
+      <span class="pill" title={projInfo.git.branches.join(", ")}>+{projInfo.git.branches.length} branch{projInfo.git.branches.length === 1 ? "" : "es"}</span>
+    {/if}
+    {#if projInfo?.git?.worktrees.length}
+      <span class="pill" title={projInfo.git.worktrees.map(w => w.branch).join(", ")}>{projInfo.git.worktrees.length} worktree{projInfo.git.worktrees.length === 1 ? "" : "s"}</span>
+    {/if}
   </div>
 </div>
 
