@@ -172,7 +172,8 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
   background:radial-gradient(circle at 50% 0%,rgba(255,255,255,.05),transparent 55%)}
 
 @media (prefers-reduced-motion:reduce){
-  .bg,.orb,.crt,.glow::before,.bar i::after,.live-dot,.mini-dot.on,.tdot{animation:none !important}
+  .bg,.orb,.crt,.glow::before,.bar i::after,.live-dot,.mini-dot.on,.tdot,
+  .mascot-roller,.mascot-wheel,.mascot-bubble{animation:none !important}
 }
 
 /* ============ GLASS + GLOW PRIMITIVE ============ */
@@ -718,3 +719,41 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
   :root[data-theme="aero"] .orbs::before,
   :root[data-theme="aero"] .orbs::after{animation:none !important}
 }
+
+/* ============ MASCOT ============ */
+.mascot-track{position:relative;height:84px;margin-top:14px;overflow:hidden}
+.mascot-roller{
+  position:absolute;bottom:4px;left:6px;width:40px;height:40px;
+  animation:mascot-roll 36s linear infinite;
+}
+.mascot-wheel{
+  width:40px;height:40px;color:var(--ink-dim);opacity:.75;
+  filter:drop-shadow(0 0 6px rgba(var(--accent-rgb),.35));
+  animation:mascot-spin 36s linear infinite;
+}
+/* roll + spin share one linear timeline, symmetric about 50%, so the wheel's
+   rotation reverses exactly when its travel does */
+@keyframes mascot-roll{
+  0%{transform:translateX(0)}
+  50%{transform:translateX(min(60vw,480px))}
+  100%{transform:translateX(0)}
+}
+@keyframes mascot-spin{
+  0%{transform:rotate(0)}
+  50%{transform:rotate(1080deg)}
+  100%{transform:rotate(0)}
+}
+.mascot-bubble{
+  position:absolute;bottom:46px;left:24px;white-space:nowrap;
+  padding:5px 10px;border-radius:10px;font-size:12px;color:var(--ink);
+  background:var(--glass-2);border:1px solid var(--glass-brd);
+  backdrop-filter:blur(8px);
+  box-shadow:0 0 18px -8px rgba(var(--accent-rgb),.5);
+  animation:mascot-pop .18s ease-out;
+}
+.mascot-bubble::after{
+  content:"";position:absolute;bottom:-4px;left:10px;width:8px;height:8px;
+  background:inherit;border:inherit;border-top:none;border-left:none;
+  transform:rotate(45deg);
+}
+@keyframes mascot-pop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}

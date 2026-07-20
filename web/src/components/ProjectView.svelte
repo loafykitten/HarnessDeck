@@ -2,6 +2,7 @@
   import { app, navigate, refreshCore } from "../lib/state.svelte";
   import { api, fmtAgo } from "../lib/api";
   import Terminal from "./Terminal.svelte";
+  import Mascot from "./Mascot.svelte";
 
   let { project }: { project: string } = $props();
 
@@ -112,5 +113,9 @@
         <button class="btn" onclick={() => { naming = true; }}>+ Start a session</button>
       </div>
     </div>
+  {/if}
+
+  {#if mySessions.length > 0}
+    <Mascot />
   {/if}
 </div>

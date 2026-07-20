@@ -1,7 +1,8 @@
 import { app, navigate, gotoProjects } from "./state.svelte";
+import { triggerSlopmaxx } from "./mascot";
 
 // ⌃1 dashboard · ⌃2 projects (last active; press again to cycle, ⌃⇧2 backward)
-// ⌃3 skills · ⌃4 config · ⌃⇧[ / ⌃⇧] prev/next session tab.
+// ⌃3 skills · ⌃4 config · ⌃⇧[ / ⌃⇧] prev/next session tab · ⌃⇧S slopmaxx the mascot.
 // Ctrl-combos deliberately: they reach us even with the terminal focused, and
 // neither macOS nor the browser reserves them (⌘1… switches browser tabs,
 // ⌃[ is ESC — both untouchable).
@@ -34,6 +35,7 @@ function handle(e: KeyboardEvent): boolean {
   if (e.shiftKey) {
     if (e.code === "BracketRight") { cycleSession(1); return true; }
     if (e.code === "BracketLeft") { cycleSession(-1); return true; }
+    if (e.code === "KeyS") return triggerSlopmaxx();
     return false;
   }
   if (digit === "1") { navigate({ view: "dash" }); return true; }
