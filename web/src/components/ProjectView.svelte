@@ -117,7 +117,8 @@
         <span class="tdot {s.status}"></span>
         <span class="tab-info">
           <span class="tab-name">{s.name}</span>
-          <span class="tab-meta"><span class="hx {s.harness}">{s.harness}</span> <span class="st {s.status}">{STATUS_LABEL[s.status]}</span> · {fmtAgo(s.activity)}</span>
+          <span class="tab-meta"><span class="hx {s.harness}">{s.harness}</span> <span class="st {s.status}">{STATUS_LABEL[s.status]}</span></span>
+          <span class="tab-time">{fmtAgo(s.activity)}</span>
         </span>
         <span class="tab-x" role="button" tabindex="0" aria-label="Kill session"
           onclick={(e) => { e.stopPropagation(); closeSession(s.id); }}

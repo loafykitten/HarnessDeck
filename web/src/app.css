@@ -492,7 +492,7 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 .tabs{display:flex;flex-direction:column;gap:7px;width:198px;flex:none;position:relative;z-index:3}
 .term-col{flex:1;min-width:0}
 .tab{
-  font-family:ui-monospace,monospace;font-size:12.5px;padding:9px 12px;cursor:pointer;
+  font-family:ui-monospace,monospace;font-size:12.5px;padding:10px 12px;cursor:pointer;
   color:var(--ink-dim);background:var(--glass);border:1px solid var(--glass-brd);
   border-radius:12px;transition:.18s;position:relative;
   display:flex;align-items:center;gap:9px;
@@ -504,12 +504,13 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
   border-color:var(--glass-brd-lit);
   box-shadow:0 0 20px -8px var(--shadow-lit);
 }
-.tab.active::after{content:"";position:absolute;left:-1px;top:9px;bottom:9px;width:3px;border-radius:3px;
+.tab.active::after{content:"";position:absolute;left:-1px;top:4px;bottom:4px;width:3px;border-radius:3px;
   background:linear-gradient(180deg,var(--accent),var(--accent-2));
   box-shadow:0 0 10px rgba(var(--accent-rgb),.7)}
 .tab-info{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
 .tab-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tab-meta{font-size:10.5px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tab-meta{font-size:10.5px;color:var(--ink-faint)}
+.tab-time{font-size:10.5px;color:var(--ink-faint)}
 .tab-meta .st.working{color:var(--ok)}
 .tab-meta .st.waiting{color:var(--accent)}
 .tdot{width:7px;height:7px;border-radius:50%;background:var(--ink-faint);flex:none}
@@ -699,7 +700,7 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
   .tabs{flex-direction:row;flex-wrap:wrap;width:auto}
   .term-col{width:100%}
   .tab{min-width:0}
-  .tab-meta{display:none}
+  .tab-meta,.tab-time{display:none}
   .tab.active::after{left:9px;right:9px;top:auto;bottom:-1px;width:auto;height:3px;
     background:linear-gradient(90deg,var(--accent),var(--accent-2))}
   .tab .tab-x{opacity:1}
