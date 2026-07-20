@@ -1,28 +1,54 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type AppConfig } from "../lib/api";
-  import { refreshGreeting } from "../lib/state.svelte";
+  import { api, type AppConfig, type CodexMode, type HarnessId } from "../lib/api";
+  import { app, refreshGreeting, refreshUsage } from "../lib/state.svelte";
   import JsonNode from "./JsonNode.svelte";
 
   let cfg = $state<AppConfig>({ displayName: "", zip: "", greetingEnabled: true, renewalDay: null });
   let settingsText = $state("");
   let settingsObj = $state<unknown>(null);
   let settingsMode = $state<"form" | "raw">("form");
-  let claudeMd = $state("");
+  let md = $state("");
   let status = $state<Record<string, { ok: boolean; msg: string } | null>>({});
 
-  onMount(async () => {
-    const [c, s, m] = await Promise.allSettled([api.appConfig(), api.settingsText(), api.claudeMd()]);
-    if (c.status === "fulfilled") cfg = c.value;
-    if (s.status === "fulfilled") {
-      settingsText = s.value;
-      try { settingsObj = JSON.parse(settingsText); } catch { settingsMode = "raw"; }
+  // Which harness the settings + instructions cards are showing.
+  let harness = $state<HarnessId>("claude");
+  const meta = $derived(app.harnesses.find(h => h.id === harness) ?? app.harnesses[0]);
+  const isJson = $derived(meta.settingsFormat === "json");
+
+  let codexMode = $state<CodexMode | null>(null);
+  let codexModeBusy = $state(false);
+
+  onMount(() => { loadHarness(); loadAppConfig(); });
+
+  async function loadAppConfig() {
+    try { cfg = await api.appConfig(); } catch { /* defaults stay */ }
+  }
+
+  async function loadHarness() {
+    const requested = harness; // a slow response must not land under another harness
+    const [s, m] = await Promise.allSettled([api.settingsText(requested), api.md(requested)]);
+    if (requested !== harness) return;
+    settingsText = s.status === "fulfilled" ? s.value : "";
+    md = m.status === "fulfilled" ? m.value : "";
+    settingsObj = null;
+    settingsMode = "raw";
+    if (isJson) {
+      try { settingsObj = JSON.parse(settingsText); settingsMode = "form"; } catch { /* raw */ }
     }
-    if (m.status === "fulfilled") claudeMd = m.value;
-  });
+    if (requested === "codex") {
+      codexMode = app.usage?.codex?.mode ?? null;
+    }
+  }
+
+  function setHarness(id: HarnessId) {
+    if (id === harness) return;
+    harness = id;
+    loadHarness();
+  }
 
   function setSettingsMode(mode: "form" | "raw") {
-    if (mode === settingsMode) return;
+    if (mode === settingsMode || !isJson) return;
     if (mode === "raw") {
       if (settingsObj !== null) settingsText = JSON.stringify(settingsObj, null, 2) + "\n";
     } else {
@@ -44,29 +70,55 @@
       refreshGreeting();
     } catch (e) { flash("greeting", false, String(e)); }
   }
+
   async function saveSettings() {
-    if (settingsMode === "form") {
-      settingsText = JSON.stringify(settingsObj, null, 2) + "\n";
-    } else {
-      try {
-        JSON.parse(settingsText);
-      } catch { flash("settings", false, "invalid JSON — not saved"); return; }
+    if (isJson) {
+      if (settingsMode === "form") {
+        settingsText = JSON.stringify(settingsObj, null, 2) + "\n";
+      } else {
+        try { JSON.parse(settingsText); }
+        catch { flash("settings", false, "invalid JSON — not saved"); return; }
+      }
     }
     try {
-      await api.saveSettingsText(settingsText);
+      await api.saveSettingsText(harness, settingsText);
       flash("settings", true, "saved — applies to new sessions");
+      if (harness === "codex") refreshUsage(); // edits may flip the auth mode
     } catch (e) { flash("settings", false, String(e)); }
   }
+
   async function saveMd() {
     try {
-      await api.saveClaudeMd(claudeMd);
+      await api.saveMd(harness, md);
       flash("md", true, "saved — applies to new sessions");
     } catch (e) { flash("md", false, String(e)); }
+  }
+
+  /** The Codex "options" the form mode renders: API key vs ChatGPT OAuth,
+      applied by (un)commenting model_provider in config.toml. */
+  async function setCodexMode(mode: CodexMode) {
+    if (codexModeBusy || codexMode === mode) return;
+    codexModeBusy = true;
+    try {
+      const res = await api.setCodexMode(mode);
+      codexMode = res.mode;
+      settingsText = await api.settingsText("codex"); // the file just changed
+      flash("settings", true, `auth mode → ${mode === "api" ? "API key" : "ChatGPT OAuth"}`);
+      refreshUsage();
+    } catch (e) { flash("settings", false, String(e)); }
+    finally { codexModeBusy = false; }
   }
 </script>
 
 <div class="greet-row">
   <div class="greet"><h1>Config</h1></div>
+  <div class="head-side">
+    <div class="je-modes">
+      {#each app.harnesses as h (h.id)}
+        <button class="je-mode" class:on={h.id === harness} onclick={() => setHarness(h.id)}>{h.label}</button>
+      {/each}
+    </div>
+  </div>
 </div>
 
 <div class="cfg-grid">
@@ -100,13 +152,27 @@
 
   <div class="glass glow cfg-card">
     <div class="cfg-head">
-      <h3>~/.claude/settings.json</h3>
-      <div class="je-modes">
-        <button class="je-mode" class:on={settingsMode === "form"} onclick={() => setSettingsMode("form")}>Form</button>
-        <button class="je-mode" class:on={settingsMode === "raw"} onclick={() => setSettingsMode("raw")}>Raw</button>
-      </div>
+      <h3>{meta.settingsLabel}</h3>
+      {#if isJson}
+        <div class="je-modes">
+          <button class="je-mode" class:on={settingsMode === "form"} onclick={() => setSettingsMode("form")}>Form</button>
+          <button class="je-mode" class:on={settingsMode === "raw"} onclick={() => setSettingsMode("raw")}>Raw</button>
+        </div>
+      {/if}
     </div>
-    {#if settingsMode === "form" && settingsObj !== null}
+    {#if harness === "codex"}
+      <div class="cfg-row cx-auth">
+        <label for="cx-auth-modes">Model provider auth</label>
+        <div id="cx-auth-modes" class="je-modes" class:busy={codexModeBusy}>
+          <button class="je-mode" class:on={codexMode === "oauth"} disabled={codexModeBusy}
+            onclick={() => setCodexMode("oauth")}>ChatGPT OAuth</button>
+          <button class="je-mode" class:on={codexMode === "api"} disabled={codexModeBusy}
+            onclick={() => setCodexMode("api")}>API key</button>
+        </div>
+        <span class="cx-auth-hint">comments/uncomments <span class="mono">model_provider</span> below</span>
+      </div>
+    {/if}
+    {#if isJson && settingsMode === "form" && settingsObj !== null}
       <div class="je">
         <JsonNode value={settingsObj} update={(v) => (settingsObj = v)} />
       </div>
@@ -118,9 +184,15 @@
   </div>
 
   <div class="glass glow cfg-card cfg-full">
-    <h3>~/.claude/CLAUDE.md</h3>
-    <textarea class="cfg-editor" style="min-height:380px" bind:value={claudeMd} spellcheck="false"></textarea>
-    <button class="btn" onclick={saveMd}>Save CLAUDE.md</button>
+    <h3>{meta.mdLabel}</h3>
+    <textarea class="cfg-editor" style="min-height:380px" bind:value={md} spellcheck="false"></textarea>
+    <button class="btn" onclick={saveMd}>Save {meta.mdLabel.split("/").pop()}</button>
     {#if status.md}<span class="cfg-status" class:ok={status.md.ok} class:bad={!status.md.ok}>{status.md.msg}</span>{/if}
   </div>
 </div>
+
+<style>
+  .cx-auth{margin-top:10px}
+  .cx-auth .je-modes.busy{opacity:.55;pointer-events:none}
+  .cx-auth-hint{display:block;font-size:10.5px;color:var(--ink-faint);margin-top:5px}
+</style>

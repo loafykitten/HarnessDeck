@@ -9,7 +9,7 @@ export interface Project {
   name: string;
   dir: string;
   lastActivity: number | null; // ms epoch, from Claude Code transcript mtimes
-  sessions: { id: string; name: string; activity: number }[];
+  sessions: { id: string; name: string; activity: number; harness: string }[];
 }
 
 /** Claude Code's transcript dir slug: path with '/' and '.' replaced by '-'. */
@@ -40,7 +40,12 @@ export async function listProjects(): Promise<Project[]> {
     } catch { /* never touched by claude — fine */ }
     const running = sessions
       .filter(s => s.project === e.name)
-      .map(s => ({ id: s.id, name: s.name, activity: s.activity }));
+      .map(s => ({ id: s.id, name: s.name, activity: s.activity, harness: s.harness }));
+    // Claude transcripts aren't the only signal: a live session of any
+    // harness (codex has no transcript dir we read) counts as activity too
+    for (const s of running) {
+      if (lastActivity === null || s.activity > lastActivity) lastActivity = s.activity;
+    }
     projects.push({ name: e.name, dir, lastActivity, sessions: running });
   }
   projects.sort((a, b) =>

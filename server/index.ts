@@ -9,17 +9,25 @@ import { getGreeting } from "./greeting";
 import { getUpdateStatus, startUpdate } from "./updates";
 import {
   getAppConfig, setAppConfig,
-  readSettings, writeSettings, readClaudeMd, writeClaudeMd,
+  readSettings, writeSettings, readMd, writeMd,
 } from "./config";
 import {
   listSkills, getSkill, readSkillFile, writeSkillFile, deleteSkill,
-  installFromUrl, generateSkill, getJob,
+  installFromUrl, generateSkill, getJob, syncSkill,
 } from "./skills";
+import { DEFAULT_HARNESS, harnessMeta, isHarnessId, type HarnessId } from "./harnesses";
+import { getCodexLimits, getCodexMode, getCodexMonth, getCodexProvider, getCodexSpend, invalidateCodexCaches, setCodexMode } from "./codex";
 import { ensureTailscaleServe } from "./tailscale";
 
 const PORT = 4553;
 const DIST = join(import.meta.dir, "..", "web", "dist");
-const PASTE_DIR = join(homedir(), "Library", "Caches", "ClaudeCommand", "pastes");
+const PASTE_DIR = join(homedir(), "Library", "Caches", "HarnessDeck", "pastes");
+
+/** ?harness= param with claude as the default, or null when unknown. */
+function harnessParam(url: URL): HarnessId | null {
+  const h = url.searchParams.get("harness") ?? DEFAULT_HARNESS;
+  return isHarnessId(h) ? h : null;
+}
 
 type WsData = { sessionId: string; pty?: IPty };
 
@@ -66,8 +74,13 @@ const server = Bun.serve<WsData>({
       if (pathname === "/api/sessions" && req.method === "POST") {
         const body = await req.json();
         if (!body.project || !body.name) return err("project and name required");
-        const res = await createSession(body.project, body.name);
+        const harness = body.harness ?? DEFAULT_HARNESS;
+        if (!isHarnessId(harness)) return err(`unknown harness: ${harness}`);
+        const res = await createSession(body.project, body.name, harness);
         return "error" in res ? err(res.error, 409) : json(res, 201);
+      }
+      if (pathname === "/api/harnesses" && req.method === "GET") {
+        return json(harnessMeta());
       }
       const sessMatch = pathname.match(/^\/api\/sessions\/([^/]+)$/);
       if (sessMatch && req.method === "DELETE") {
@@ -91,16 +104,40 @@ const server = Bun.serve<WsData>({
       }
 
       if (pathname === "/api/usage" && req.method === "GET") {
-        // Partial-failure tolerant: each half degrades independently
-        const [limits, month] = await Promise.allSettled([getLimits(), getMonth()]);
+        // Partial-failure tolerant: each piece degrades independently
+        const [limits, month, codexMode, codexLimits, codexMonth, codexProvider, codexSpend] = await Promise.allSettled([
+          getLimits(), getMonth(), getCodexMode(), getCodexLimits(), getCodexMonth(),
+          getCodexProvider(), getCodexSpend(),
+        ]);
         return json({
           limits: limits.status === "fulfilled" ? limits.value : null,
           month: month.status === "fulfilled" ? month.value : null,
+          codex: {
+            mode: codexMode.status === "fulfilled" ? codexMode.value : "api",
+            providerName: codexProvider.status === "fulfilled" ? codexProvider.value : null,
+            limits: codexLimits.status === "fulfilled" ? codexLimits.value : null,
+            month: codexMonth.status === "fulfilled" ? codexMonth.value : null,
+            spend: codexSpend.status === "fulfilled" ? codexSpend.value : null,
+          },
           errors: [
             ...(limits.status === "rejected" ? [`limits: ${limits.reason}`] : []),
             ...(month.status === "rejected" ? [`month: ${month.reason}`] : []),
+            ...(codexMonth.status === "rejected" ? [`codex: ${codexMonth.reason}`] : []),
           ],
         });
+      }
+
+      // ---- Codex auth mode (API key vs ChatGPT OAuth) ----
+      if (pathname === "/api/codex/mode") {
+        if (req.method === "GET") return json({ mode: await getCodexMode() });
+        if (req.method === "PUT") {
+          const body = await req.json();
+          if (body.mode !== "api" && body.mode !== "oauth") return err("mode must be 'api' or 'oauth'");
+          const res = await setCodexMode(body.mode);
+          if (typeof res === "object") return err(res.error, 409);
+          invalidateCodexCaches();
+          return json({ mode: res });
+        }
       }
 
       if (pathname === "/api/greeting" && req.method === "GET") {
@@ -129,6 +166,12 @@ const server = Bun.serve<WsData>({
         const body = await req.json();
         const res = await generateSkill(String(body.name ?? ""), String(body.prompt ?? ""));
         return "error" in res ? err(res.error) : json(res, 202);
+      }
+      const syncMatch = pathname.match(/^\/api\/skills\/([^/]+)\/sync$/);
+      if (syncMatch && req.method === "POST") {
+        const body = await req.json();
+        const res = await syncSkill(decodeURIComponent(syncMatch[1]), String(body.to ?? ""));
+        return "error" in res ? err(res.error) : json(res);
       }
       const jobMatch = pathname.match(/^\/api\/skills\/jobs\/([^/]+)$/);
       if (jobMatch && req.method === "GET") {
@@ -170,15 +213,20 @@ const server = Bun.serve<WsData>({
         }
       }
       if (pathname === "/api/config/settings") {
-        if (req.method === "GET") return new Response(await readSettings(), { headers: { "content-type": "application/json" } });
+        const h = harnessParam(url);
+        if (!h) return err("unknown harness");
+        if (req.method === "GET") return new Response(await readSettings(h), { headers: { "content-type": "text/plain; charset=utf-8" } });
         if (req.method === "PUT") {
-          try { await writeSettings(await req.text()); } catch { return err("invalid JSON"); }
+          try { await writeSettings(h, await req.text()); } catch { return err("invalid syntax — not saved"); }
+          invalidateCodexCaches(); // config.toml edits can change the auth mode
           return json({ ok: true });
         }
       }
-      if (pathname === "/api/config/claude-md") {
-        if (req.method === "GET") return new Response(await readClaudeMd(), { headers: { "content-type": "text/markdown" } });
-        if (req.method === "PUT") { await writeClaudeMd(await req.text()); return json({ ok: true }); }
+      if (pathname === "/api/config/md") {
+        const h = harnessParam(url);
+        if (!h) return err("unknown harness");
+        if (req.method === "GET") return new Response(await readMd(h), { headers: { "content-type": "text/markdown" } });
+        if (req.method === "PUT") { await writeMd(h, await req.text()); return json({ ok: true }); }
       }
 
       if (pathname.startsWith("/api/") || pathname.startsWith("/ws/")) return err("not found", 404);
@@ -241,7 +289,7 @@ const server = Bun.serve<WsData>({
   },
 });
 
-console.log(`Claude Command → http://localhost:${server.port} (loopback only)`);
+console.log(`HarnessDeck → http://localhost:${server.port} (loopback only)`);
 ensureTailscaleServe(PORT).then(url => {
   if (url) console.log(`              ⤷ tailnet ${url}`);
 });

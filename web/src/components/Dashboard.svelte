@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { app, applyUpdate, navigate, refreshUpdate } from "../lib/state.svelte";
-  import { fmtAgo, fmtClock, fmtDate, fmtTokens, fmtUSD, initials, projectGradient } from "../lib/api";
+  import { app, applyUpdate, navigate, refreshUpdate, refreshUsage } from "../lib/state.svelte";
+  import { api, fmtAgo, fmtClock, fmtDate, fmtTokens, fmtUSD, initials, projectGradient, type CodexMode } from "../lib/api";
 
   const RING_C = 333; // 2πr for r=53
 
@@ -68,6 +68,28 @@
     const mins = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 60000));
     const h = Math.floor(mins / 60), m = mins % 60;
     return h > 0 ? `~${h}h ${m}m remaining` : `~${m}m remaining`;
+  }
+
+  // ---- Codex usage + auth-mode toggle ----
+  const cx = $derived(app.usage?.codex ?? null);
+  const cxFive = $derived(clampPct(cx?.limits?.fiveHour?.pct));
+  const cxWeek = $derived(clampPct(cx?.limits?.weekly?.pct));
+  const cxSpend = $derived(cx?.spend ?? null);
+  let cxBusy = $state(false);
+  let cxErr = $state("");
+  async function setCodexMode(mode: CodexMode) {
+    if (cxBusy || !cx || cx.mode === mode) return;
+    cxBusy = true;
+    cxErr = "";
+    try {
+      const res = await api.setCodexMode(mode);
+      if (app.usage?.codex) app.usage.codex.mode = res.mode;
+      await refreshUsage();
+    } catch (e) {
+      cxErr = e instanceof Error ? e.message : "toggle failed";
+    } finally {
+      cxBusy = false;
+    }
   }
 </script>
 
@@ -213,6 +235,65 @@
   </div>
 </div>
 
+{#if cx}
+  <div class="glass glow card codex-card">
+    <div class="cx-head">
+      <h3>Codex</h3>
+      <div class="je-modes" class:cx-busy={cxBusy}>
+        <button class="je-mode" class:on={cx.mode === "oauth"} disabled={cxBusy}
+          title="Comment out model_provider in ~/.codex/config.toml — Codex uses your ChatGPT login"
+          onclick={() => setCodexMode("oauth")}>ChatGPT OAuth</button>
+        <button class="je-mode" class:on={cx.mode === "api"} disabled={cxBusy}
+          title="Re-enable model_provider in ~/.codex/config.toml — Codex bills your API key"
+          onclick={() => setCodexMode("api")}>API key</button>
+      </div>
+      <span class="cx-note">
+        {#if cxErr}<span class="cx-err">{cxErr}</span>
+        {:else if cx.mode === "oauth"}signed in with ChatGPT — usage draws on your subscription's windows
+        {:else}pay-as-you-go on your {cx.providerName ?? "API"} key{/if}
+      </span>
+    </div>
+
+    <div class="cx-body">
+      {#if cx.mode === "oauth"}
+        <div class="cx-bars">
+          <div class="bar-label"><span>5-hour window</span><b>{cxFive ?? "–"}%</b></div>
+          <div class="bar-frame"><div class="bar sub"><span class="bar-glow" style="width:{cxFive ?? 0}%"></span><i style="width:{cxFive ?? 0}%"></i></div></div>
+          <div class="bar-label"><span>weekly</span><b>{cxWeek ?? "–"}%</b></div>
+          <div class="bar-frame"><div class="bar sub"><span class="bar-glow alt" style="width:{cxWeek ?? 0}%"></span><i class="alt" style="width:{cxWeek ?? 0}%"></i></div></div>
+          <div class="reset">
+            {#if cx.limits?.fiveHour?.resetsAt}Resets <b>{fmtClock(cx.limits.fiveHour.resetsAt)}</b> · weekly <b>{fmtClock(cx.limits?.weekly?.resetsAt ?? null)}</b>{/if}
+            {#if cx.limits?.asOf}<span class="cx-asof">snapshot {fmtAgo(new Date(cx.limits.asOf).getTime())}</span>{/if}
+          </div>
+        </div>
+        <div class="cx-stat">
+          <div class="cx-num">{cxSpend ? fmtTokens(cxSpend.oauth.tokens) : "–"}</div>
+          <div class="cx-sub">subscription tokens this month<br>{cxSpend ? fmtUSD(cxSpend.oauth.costUSD) : "–"} API-equivalent value</div>
+        </div>
+        {#if cxSpend && cxSpend.api.tokens > 0}
+          <div class="cx-stat cx-dim">
+            <div class="cx-sub">API key this month<br>{fmtTokens(cxSpend.api.tokens)} tokens · {fmtUSD(cxSpend.api.costUSD)}</div>
+          </div>
+        {/if}
+      {:else}
+        <div class="cx-stat">
+          <div class="cx-num">{cxSpend ? fmtUSD(cxSpend.api.costUSD) : "–"}</div>
+          <div class="cx-sub">API spend this month</div>
+        </div>
+        <div class="cx-stat">
+          <div class="cx-num">{cxSpend ? fmtTokens(cxSpend.api.tokens) : "–"}</div>
+          <div class="cx-sub">API-key tokens this month</div>
+        </div>
+        {#if cxSpend && cxSpend.oauth.tokens > 0}
+          <div class="cx-stat cx-dim">
+            <div class="cx-sub">ChatGPT subscription this month<br>{fmtTokens(cxSpend.oauth.tokens)} tokens · {fmtUSD(cxSpend.oauth.costUSD)} API-equivalent</div>
+          </div>
+        {/if}
+      {/if}
+    </div>
+  </div>
+{/if}
+
 <div class="grid lower-grid">
   <div class="glass glow sessions">
     <h3>Active sessions</h3>
@@ -221,7 +302,7 @@
       {#each sessions as s, i (s.id)}
         <button class="sess-item" onclick={() => navigate({ view: "project", name: s.project, session: s.id })}>
           <div class="sess-ico" class:alt={i % 2 === 1}>{i % 2 === 0 ? "◈" : "⬡"}</div>
-          <div class="sess-meta"><b>{s.project}</b><div class="s">active {fmtAgo(s.activity)}</div></div>
+          <div class="sess-meta"><b>{s.project}</b><div class="s">active {fmtAgo(s.activity)} · {s.harness}</div></div>
           <span class="sess-status {s.status}"><i></i>{s.status === "waiting" ? "needs you" : s.status}</span>
           <span class="sess-tag">{s.name}</span>
           <span class="sess-go">›</span>
@@ -251,6 +332,29 @@
 </div>
 
 <style>
+  /* Codex card — one wide strip under the Claude usage grid */
+  .codex-card{margin-bottom:16px}
+  .cx-head{display:flex;align-items:center;gap:14px}
+  .cx-head h3{margin:0}
+  .cx-note{font-size:11px;color:var(--ink-faint);margin-left:auto;text-align:right}
+  .cx-err{color:var(--accent-2)}
+  .cx-busy{opacity:.55;pointer-events:none}
+  .cx-body{display:flex;align-items:flex-end;gap:34px;margin-top:14px}
+  .cx-bars{flex:1;max-width:520px}
+  .cx-bars .bar-label:first-child{margin-top:0}
+  /* These bars are much wider than the Claude weekly card's, so the global
+     160px-period animated gradient reads as repeating stripes here. Use one
+     smooth static gradient across the full fill instead. */
+  .cx-bars .bar i::before,.cx-bars .bar-glow::before{content:none}
+  .cx-bars .bar-glow{background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+  .cx-bars .bar-glow.alt{background:linear-gradient(90deg,var(--accent-3),var(--accent-2))}
+  .cx-asof{margin-left:12px;color:var(--ink-faint)}
+  .cx-stat{flex:none}
+  .cx-num{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.1;color:var(--ink)}
+  .cx-sub{font-size:11px;color:var(--ink-faint);margin-top:3px;line-height:1.5}
+  .cx-dim{margin-left:auto;text-align:right}
+  @media (max-width:900px){.cx-body{flex-wrap:wrap;gap:18px}}
+
   /* Claude Code updater chip — quiet at rest, lit when an update is waiting */
   .upd{gap:9px;padding-right:6px;color:var(--ink-dim)}
   .upd-dot{width:7px;height:7px;border-radius:50%;background:var(--ink-faint);flex-shrink:0}

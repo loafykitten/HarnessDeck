@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app, navigate, projectSessions, refreshCore } from "../lib/state.svelte";
-  import { api, fmtAgo } from "../lib/api";
+  import { api, fmtAgo, type HarnessId } from "../lib/api";
   import Terminal from "./Terminal.svelte";
   import Mascot from "./Mascot.svelte";
 
@@ -26,12 +26,36 @@
   let creating = $state(false);
   let createError = $state("");
 
+  // Which harness the next session runs. Sticky across visits; Shift+Tab
+  // cycles it while the name input has focus.
+  const savedHarness = localStorage.getItem("hd-new-harness");
+  let newHarness = $state<HarnessId>(
+    app.harnesses.some(h => h.id === savedHarness) ? savedHarness as HarnessId : "claude");
+
+  function cycleHarness(dir: 1 | -1 = 1) {
+    const ids = app.harnesses.map(h => h.id);
+    const i = ids.indexOf(newHarness);
+    newHarness = ids[(i + dir + ids.length) % ids.length];
+    localStorage.setItem("hd-new-harness", newHarness);
+  }
+
+  function pickHarness(id: HarnessId) {
+    newHarness = id;
+    localStorage.setItem("hd-new-harness", id);
+  }
+
+  function namingKeydown(e: KeyboardEvent) {
+    if (e.key === "Tab" && e.shiftKey) { e.preventDefault(); cycleHarness(); return; }
+    if (e.key === "Enter") createNew();
+    if (e.key === "Escape") { naming = false; createError = ""; }
+  }
+
   async function createNew() {
     const name = newName.trim() || `session-${mySessions.length + 1}`;
     creating = true;
     createError = "";
     try {
-      const { id } = await api.createSession(project, name);
+      const { id } = await api.createSession(project, name, newHarness);
       naming = false;
       newName = "";
       await refreshCore();
@@ -78,7 +102,7 @@
         <span class="tdot {s.status}"></span>
         <span class="tab-info">
           <span class="tab-name">{s.name}</span>
-          <span class="tab-meta"><span class="st {s.status}">{STATUS_LABEL[s.status]}</span> · {fmtAgo(s.activity)}</span>
+          <span class="tab-meta"><span class="hx {s.harness}">{s.harness}</span> <span class="st {s.status}">{STATUS_LABEL[s.status]}</span> · {fmtAgo(s.activity)}</span>
         </span>
         <span class="tab-x" role="button" tabindex="0" aria-label="Kill session"
           onclick={(e) => { e.stopPropagation(); closeSession(s.id); }}
@@ -86,11 +110,21 @@
       </div>
     {/each}
     {#if naming}
-      <div class="tab new">
+      <div class="tab new naming">
         <!-- svelte-ignore a11y_autofocus -->
         <input autofocus placeholder="session name…" bind:value={newName}
-          onkeydown={(e) => { if (e.key === "Enter") createNew(); if (e.key === "Escape") { naming = false; createError = ""; } }}
+          onkeydown={namingKeydown}
           onblur={() => { if (!creating) { naming = false; createError = ""; } }} />
+        <!-- mousedown-preventDefault keeps the input focused so its onblur
+             doesn't dismiss the form before the click lands -->
+        <div class="harness-pick" role="radiogroup" aria-label="Harness">
+          {#each app.harnesses as h (h.id)}
+            <button class="hopt" class:on={h.id === newHarness} role="radio" aria-checked={h.id === newHarness}
+              onmousedown={(e) => e.preventDefault()}
+              onclick={() => pickHarness(h.id)}>{h.label}</button>
+          {/each}
+        </div>
+        <span class="hint">⇧⇥ switches harness</span>
       </div>
     {:else}
       <div class="tab new" role="button" tabindex="0"
@@ -105,7 +139,7 @@
       <div class="glass term">
         <div class="term-bar">
           <div class="tl"><i></i><i></i><i></i></div>
-          <span class="tt">{activeSession?.name ?? ""} — claude</span>
+          <span class="tt">{activeSession?.name ?? ""} — {activeSession?.harness ?? "claude"}</span>
           <span class="rt">{project}</span>
         </div>
         {#each mySessions as s (s.id)}
@@ -127,3 +161,15 @@
     {/if}
   </div>
 </div>
+
+<style>
+  /* harness picker inside the new-session tab (.hx chips are global) */
+  .tab.naming{flex-direction:column;align-items:stretch;gap:7px}
+  .harness-pick{display:flex;gap:4px}
+  .hopt{flex:1;font:inherit;font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+    cursor:pointer;padding:4px 0;border-radius:7px;border:1px solid var(--glass-brd);
+    background:transparent;color:var(--ink-faint)}
+  .hopt:hover{color:var(--ink-dim)}
+  .hopt.on{color:var(--ink);background:var(--glass-brd);border-color:var(--glass-brd-lit)}
+  .tab.naming .hint{font-size:9.5px;color:var(--ink-faint);text-align:center;letter-spacing:.04em}
+</style>

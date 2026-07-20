@@ -1,12 +1,22 @@
 export type SessionStatus = "working" | "waiting" | "idle";
+export type HarnessId = "claude" | "codex";
+export type CodexMode = "api" | "oauth";
+export interface HarnessMeta {
+  id: HarnessId; label: string;
+  mdLabel: string; settingsLabel: string; settingsFormat: "json" | "toml";
+}
 export interface SessionInfo {
-  id: string; project: string; name: string;
+  id: string; project: string; name: string; harness: HarnessId;
   created: number; activity: number; attached: number;
   status: SessionStatus;
 }
 export interface ProjectInfo {
   name: string; dir: string; lastActivity: number | null;
-  sessions: { id: string; name: string; activity: number }[];
+  sessions: { id: string; name: string; activity: number; harness: HarnessId }[];
+}
+export interface MonthUsage {
+  month: string; since: string | null; totalTokens: number; costUSD: number;
+  days: { date: string; tokens: number; costUSD: number }[];
 }
 export interface Usage {
   limits: {
@@ -15,9 +25,20 @@ export interface Usage {
     weeklyModel: { pct: number; model: string } | null;
     plan: { label: string; renewsAt: string | null };
   } | null;
-  month: {
-    month: string; since: string | null; totalTokens: number; costUSD: number;
-    days: { date: string; tokens: number; costUSD: number }[];
+  month: MonthUsage | null;
+  codex: {
+    mode: CodexMode;
+    providerName: string | null;
+    limits: {
+      fiveHour: { pct: number | null; resetsAt: string | null };
+      weekly: { pct: number | null; resetsAt: string | null };
+      asOf: string | null;
+    } | null;
+    month: MonthUsage | null;
+    spend: {
+      api: { tokens: number; costUSD: number };
+      oauth: { tokens: number; costUSD: number };
+    } | null;
   } | null;
   errors: string[];
 }
@@ -33,11 +54,12 @@ export interface UpdateStatus {
   error: string | null; job: UpdateJob | null;
 }
 export interface AppConfig { displayName: string; zip: string; greetingEnabled: boolean; renewalDay: number | null }
-export interface SkillSummary { name: string; description: string; files: number; updated: number }
+export interface SkillSummary { name: string; description: string; files: number; updated: number; harnesses: HarnessId[] }
 export interface SkillDetail {
   name: string;
   frontmatter: Record<string, string>;
   files: { path: string; size: number; mtime: number; editable: boolean }[];
+  harnesses: HarnessId[];
 }
 export interface SkillJob {
   id: string; skillName: string;
@@ -54,11 +76,18 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   projects: () => j<ProjectInfo[]>("/api/projects"),
   sessions: () => j<SessionInfo[]>("/api/sessions"),
-  createSession: (project: string, name: string) =>
+  harnesses: () => j<HarnessMeta[]>("/api/harnesses"),
+  createSession: (project: string, name: string, harness: HarnessId) =>
     j<{ id: string }>("/api/sessions", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ project, name }),
+      body: JSON.stringify({ project, name, harness }),
+    }),
+  setCodexMode: (mode: CodexMode) =>
+    j<{ mode: CodexMode }>("/api/codex/mode", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode }),
     }),
   killSession: (id: string) =>
     j<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
@@ -73,12 +102,13 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(cfg),
     }),
-  settingsText: () => fetch("/api/config/settings").then(r => r.text()),
-  saveSettingsText: (text: string) =>
-    j<{ ok: boolean }>("/api/config/settings", { method: "PUT", body: text }),
-  claudeMd: () => fetch("/api/config/claude-md").then(r => r.text()),
-  saveClaudeMd: (text: string) =>
-    j<{ ok: boolean }>("/api/config/claude-md", { method: "PUT", body: text }),
+  settingsText: (harness: HarnessId) =>
+    fetch(`/api/config/settings?harness=${harness}`).then(r => r.text()),
+  saveSettingsText: (harness: HarnessId, text: string) =>
+    j<{ ok: boolean }>(`/api/config/settings?harness=${harness}`, { method: "PUT", body: text }),
+  md: (harness: HarnessId) => fetch(`/api/config/md?harness=${harness}`).then(r => r.text()),
+  saveMd: (harness: HarnessId, text: string) =>
+    j<{ ok: boolean }>(`/api/config/md?harness=${harness}`, { method: "PUT", body: text }),
   pasteImage: (sessionId: string, blob: Blob) =>
     j<{ ok: boolean; path: string }>(
       `/api/sessions/${encodeURIComponent(sessionId)}/image`,
@@ -94,6 +124,11 @@ export const api = {
       { method: "PUT", body: content }),
   deleteSkill: (name: string) =>
     j<{ ok: boolean }>(`/api/skills/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  syncSkill: (name: string, to: HarnessId) =>
+    j<{ ok: boolean }>(`/api/skills/${encodeURIComponent(name)}/sync`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ to }),
+    }),
   installSkill: (url: string) =>
     j<{ installed: string[]; skipped: string[] }>("/api/skills/install", {
       method: "POST", headers: { "content-type": "application/json" },

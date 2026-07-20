@@ -23,7 +23,7 @@
         <circle cx="5.9" cy="18.1" r="0.7" fill="#fff" stroke="none"/>
       </svg>
     </button>
-    <div class="brandtext"><b>Claude Command</b><span>control center</span></div>
+    <div class="brandtext"><b>HarnessDeck</b><span>control center</span></div>
   </div>
 
   <nav class="rail-nav">

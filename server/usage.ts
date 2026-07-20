@@ -4,12 +4,15 @@ import { mkdir } from "node:fs/promises";
 import { getAppConfig } from "./config";
 
 const CREDS_PATH = join(homedir(), ".claude", ".credentials.json");
-const DISK_CACHE = join(homedir(), ".config", "claude-command", "usage-cache.json");
+const DISK_CACHE = join(homedir(), ".config", "harnessdeck", "usage-cache.json");
+// pre-rename location (Claude Command era) — read-only fallback
+const LEGACY_DISK_CACHE = join(homedir(), ".config", "claude-command", "usage-cache.json");
 
 /** Last-good API responses survive restarts: the server restarts often
     (KeepAlive, updates) and the OAuth endpoints 429 when hit cold each time. */
 async function diskCache(): Promise<Record<string, unknown>> {
-  try { return await Bun.file(DISK_CACHE).json(); } catch { return {}; }
+  try { return await Bun.file(DISK_CACHE).json(); } catch { /* fall through */ }
+  try { return await Bun.file(LEGACY_DISK_CACHE).json(); } catch { return {}; }
 }
 async function saveDiskCache(key: string, value: unknown): Promise<void> {
   const all = await diskCache();

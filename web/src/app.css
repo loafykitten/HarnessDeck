@@ -898,3 +898,17 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 .mascot-bubble.flip{left:auto;right:32px}
 .mascot-bubble.flip::after{left:auto;right:10px}
 @keyframes mascot-pop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* Skills drill-in editor: .term sits directly in .term-wrap (no .term-col
+   wrapper like the project view), so it needs its own flex:1 or WebKit
+   shrinks it to the textarea's intrinsic ~20-column width. */
+.term-wrap>.term{flex:1;min-width:0}
+
+/* ---- harness chips (session tabs, skill cards, skill drill-in) ---- */
+.hx{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  padding:1px 6px;border-radius:999px;border:1px solid var(--glass-brd);color:var(--ink-dim)}
+.hx.claude{color:var(--accent);border-color:rgba(var(--accent-rgb),.45)}
+.hx.codex{color:var(--accent-3);border-color:rgba(var(--accent-3-rgb),.45)}
+.hx-row{display:inline-flex;gap:4px;margin-left:auto;flex:none}
+.hx-pill{display:inline-flex;gap:5px;align-items:center}
+.hx-note{font-size:9.5px;letter-spacing:.05em;color:var(--ink-faint)}

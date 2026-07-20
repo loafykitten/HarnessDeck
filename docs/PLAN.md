@@ -1,6 +1,8 @@
-# Claude Command — Plan
+# HarnessDeck (née Claude Command) — Plan
 
-A local "control center" web app for managing Claude Code on this machine.
+A local "control center" web app for managing coding-agent harnesses (Claude
+Code, Codex CLI) on this machine. Multi-harness architecture: see
+`docs/HARNESSES.md`.
 Starts at login, serves on `http://localhost:4553`, bound to **127.0.0.1 only**.
 
 ## Feature set

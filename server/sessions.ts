@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_HARNESS, HARNESSES, isHarnessId, type HarnessId } from "./harnesses";
 
 const PREFIX = "cc-";
 const SEP = "--";
@@ -11,6 +12,7 @@ export interface Session {
   id: string;
   project: string;
   name: string;
+  harness: HarnessId;
   created: number;
   activity: number;
   attached: number;
@@ -32,22 +34,28 @@ function sanitize(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
 }
 
-export function sessionId(project: string, name: string): string {
-  return `${PREFIX}${sanitize(project)}${SEP}${sanitize(name)}`;
+/** Sanitized names can never contain "--" (runs of '-' collapse), so SEP
+    splits are unambiguous. Claude ids stay two-segment (`cc-proj--name`) for
+    compatibility with sessions created before harnesses existed; any other
+    harness appends its id as a third segment (`cc-proj--name--codex`). */
+export function sessionId(project: string, name: string, harness: HarnessId): string {
+  const base = `${PREFIX}${sanitize(project)}${SEP}${sanitize(name)}`;
+  return harness === DEFAULT_HARNESS ? base : `${base}${SEP}${harness}`;
 }
 
-/** Classify a session from its visible pane. Claude Code paints a transient
-    spinner line with an elapsed-time timer ("✳ Actualizing… (3m 3s · …")
-    while running, and numbered ❯ options when it's waiting on a human
-    answer; the bare "❯" input prompt is always on screen, so waiting must
-    match the option list, not the prompt. Working is checked first: stale
-    question text can linger in the visible scrollback. */
-async function sessionStatus(id: string): Promise<SessionStatus> {
+/** Classify a session from its visible pane. Each harness paints a transient
+    spinner line with an elapsed-time timer while running, and numbered ❯
+    options when it's waiting on a human answer; the bare "❯" input prompt is
+    always on screen, so waiting must match the option list, not the prompt.
+    Working is checked first: stale question text can linger in the visible
+    scrollback. */
+async function sessionStatus(id: string, harness: HarnessId): Promise<SessionStatus> {
   const res = await tmux("capture-pane", "-p", "-t", `${id}:`);
   if (!res.ok) return "idle";
+  const h = HARNESSES[harness];
   const tail = res.out.trimEnd().split("\n").slice(-30).join("\n");
-  if (/… \(\d+m? ?\d*s ?·|esc to interrupt/.test(tail)) return "working";
-  if (/❯ ?\d+[.)] |Do you want|Would you like to proceed|What should Claude do instead/.test(tail)) return "waiting";
+  if (h.working.test(tail)) return "working";
+  if (h.waiting.test(tail)) return "waiting";
   return "idle";
 }
 
@@ -64,27 +72,28 @@ export async function listSessions(): Promise<Session[]> {
     if (!line) continue;
     const [id, created, activity, attached] = line.split("|");
     if (!id?.startsWith(PREFIX)) continue;
-    const rest = id.slice(PREFIX.length);
-    const i = rest.indexOf(SEP);
+    const parts = id.slice(PREFIX.length).split(SEP);
+    const last = parts[parts.length - 1];
+    const harness = parts.length >= 3 && isHarnessId(last) ? last : DEFAULT_HARNESS;
+    const nameParts = harness === DEFAULT_HARNESS ? parts.slice(1) : parts.slice(1, -1);
     sessions.push({
       id,
-      project: i === -1 ? rest : rest.slice(0, i),
-      name: i === -1 ? "main" : rest.slice(i + SEP.length),
+      project: parts[0],
+      name: nameParts.join(SEP) || "main",
+      harness,
       created: Number(created) * 1000,
       activity: Number(activity) * 1000,
       attached: Number(attached),
       status: "idle",
     });
   }
-  const statuses = await Promise.all(sessions.map(s => sessionStatus(s.id)));
+  const statuses = await Promise.all(sessions.map(s => sessionStatus(s.id, s.harness)));
   sessions.forEach((s, i) => { s.status = statuses[i]; });
   sessions.sort((a, b) => b.activity - a.activity);
   return sessions;
 }
 
-const CLAUDE_BIN = join(homedir(), ".local", "bin", "claude");
-
-export async function createSession(project: string, name: string): Promise<{ id: string } | { error: string }> {
+export async function createSession(project: string, name: string, harness: HarnessId = DEFAULT_HARNESS): Promise<{ id: string } | { error: string }> {
   const dir = join(DEV_DIR, project);
   try {
     const st = await import("node:fs/promises").then(fs => fs.stat(dir));
@@ -92,15 +101,15 @@ export async function createSession(project: string, name: string): Promise<{ id
   } catch {
     return { error: `no such project: ${project}` };
   }
-  const id = sessionId(project, name);
+  const id = sessionId(project, name, harness);
   const existing = await tmux("has-session", "-t", `=${id}`);
   if (existing.ok) return { error: `session already exists: ${id}` };
-  // Login + interactive zsh (sources ~/.zprofile and ~/.zshrc, so claude
-  // inherits the user's env vars) that execs claude: when claude exits, the
-  // shell — and with it the session — ends.
+  // Login + interactive zsh (sources ~/.zprofile and ~/.zshrc, so the agent
+  // inherits the user's env vars) that execs the harness binary: when it
+  // exits, the shell — and with it the session — ends.
   const res = await tmux(
     "new-session", "-d", "-s", id, "-c", dir, "-x", "220", "-y", "50",
-    "zsh", "-lic", `exec ${CLAUDE_BIN}`,
+    "zsh", "-lic", `exec ${HARNESSES[harness].bin}`,
   );
   if (!res.ok) return { error: res.err.trim() || "tmux new-session failed" };
   // no '=' prefix: set-option's -t is a pane-style target that rejects it

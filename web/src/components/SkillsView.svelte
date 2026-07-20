@@ -1,9 +1,36 @@
 <script lang="ts">
-  import { api, fmtAgo, type SkillDetail, type SkillSummary } from "../lib/api";
+  import { api, fmtAgo, type HarnessId, type SkillDetail, type SkillSummary } from "../lib/api";
   import { app, navigate } from "../lib/state.svelte";
 
   let skills = $state<SkillSummary[]>([]);
   let loaded = $state(false);
+
+  // per-harness filter for the list
+  let filter = $state<"all" | HarnessId>("all");
+  const shown = $derived.by(() => {
+    const f = filter; // snapshot so TS narrows inside the callback
+    return f === "all" ? skills : skills.filter(s => s.harnesses.includes(f));
+  });
+
+  // sync a skill into another harness's skills dir
+  let syncBusy = $state(false);
+  let syncMsg = $state<{ ok: boolean; msg: string } | null>(null);
+  async function syncTo(h: HarnessId) {
+    if (!detail || syncBusy) return;
+    syncBusy = true;
+    syncMsg = null;
+    try {
+      await api.syncSkill(detail.name, h);
+      detail = await api.skill(detail.name);
+      syncMsg = { ok: true, msg: `copied to ${h}` };
+      refresh();
+    } catch (e) {
+      syncMsg = { ok: false, msg: e instanceof Error ? e.message : "sync failed" };
+    } finally {
+      syncBusy = false;
+      setTimeout(() => syncMsg = null, 3500);
+    }
+  }
 
   // drill-in
   let detail = $state<SkillDetail | null>(null);
@@ -69,7 +96,8 @@
 
   async function removeSkill() {
     if (!detail) return;
-    if (!confirm(`Delete the skill "${detail.name}"? This removes ~/.claude/skills/${detail.name} permanently.`)) return;
+    const dirs = detail.harnesses.map(h => app.harnesses.find(x => x.id === h)?.label ?? h).join(" and ");
+    if (!confirm(`Delete the skill "${detail.name}"? This removes it permanently from ${dirs}.`)) return;
     await api.deleteSkill(detail.name).catch(console.error);
     detail = null;
     navigate({ view: "skills" });
@@ -143,6 +171,15 @@
       <span class="pv-path">{detail.frontmatter.description?.slice(0, 110) ?? ""}</span>
     </div>
     <div class="pv-metas">
+      <span class="pill hx-pill" title={detail.harnesses.length > 1 ? "Owned by several harnesses — edits here update every copy" : ""}>
+        {#each detail.harnesses as h (h)}<span class="hx {h}">{h}</span>{/each}
+        {#if detail.harnesses.length > 1}<span class="hx-note">edits update all</span>{/if}
+      </span>
+      {#each app.harnesses.filter(h => !detail!.harnesses.includes(h.id)) as h (h.id)}
+        <button class="btn ghost" style="margin-top:0" disabled={syncBusy}
+          onclick={() => syncTo(h.id)}>Sync to {h.label}</button>
+      {/each}
+      {#if syncMsg}<span class="cfg-status" class:ok={syncMsg.ok} class:bad={!syncMsg.ok}>{syncMsg.msg}</span>{/if}
       <button class="btn ghost" style="margin-top:0" onclick={removeSkill}>Delete skill</button>
     </div>
   </div>
@@ -175,20 +212,31 @@
   <div class="greet-row">
     <div class="greet"><h1>Skills</h1></div>
     <div class="head-side">
-      <span class="pill">{skills.length} installed · <span class="mono">~/.claude/skills</span></span>
+      <div class="je-modes">
+        <button class="je-mode" class:on={filter === "all"} onclick={() => filter = "all"}>All</button>
+        {#each app.harnesses as h (h.id)}
+          <button class="je-mode" class:on={filter === h.id} onclick={() => filter = h.id}>{h.label}</button>
+        {/each}
+      </div>
+      <span class="pill">{shown.length} skill{shown.length === 1 ? "" : "s"}</span>
     </div>
   </div>
 
   <div class="proj-section" style="padding-top:0">
     <div class="proj-grid skills-grid">
-      {#each skills as s (s.name)}
+      {#each shown as s (s.name)}
         <button class="pcard skill-card" onclick={() => navigate({ view: "skills", name: s.name })}>
-          <div class="ptop"><span class="pav skill-pav">✦</span><b class="mono">{s.name}</b></div>
+          <div class="ptop">
+            <span class="pav skill-pav">✦</span><b class="mono">{s.name}</b>
+            <span class="hx-row">{#each s.harnesses as h (h)}<span class="hx {h}">{h}</span>{/each}</span>
+          </div>
           <div class="skill-desc">{s.description || "(no description)"}</div>
           <div class="pstatus"><span class="mini-dot off"></span>{s.files} file{s.files === 1 ? "" : "s"} · updated {fmtAgo(s.updated)}</div>
         </button>
       {:else}
-        {#if loaded}<div class="sess-empty">No skills installed yet — add one below.</div>{/if}
+        {#if loaded}
+          <div class="sess-empty">{filter === "all" ? "No skills installed yet — add one below." : `No ${filter} skills yet — sync one over from its detail page.`}</div>
+        {/if}
       {/each}
     </div>
   </div>

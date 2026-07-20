@@ -1,10 +1,17 @@
-import { api, type Greeting, type ProjectInfo, type SessionInfo, type UpdateStatus, type Usage } from "./api";
+import { api, type Greeting, type HarnessMeta, type ProjectInfo, type SessionInfo, type UpdateStatus, type Usage } from "./api";
 import { chime } from "./sound";
+
+/** Fallback until GET /api/harnesses answers, so pickers render immediately. */
+const DEFAULT_HARNESSES: HarnessMeta[] = [
+  { id: "claude", label: "Claude", mdLabel: "~/.claude/CLAUDE.md", settingsLabel: "~/.claude/settings.json", settingsFormat: "json" },
+  { id: "codex", label: "Codex", mdLabel: "~/.codex/AGENTS.md", settingsLabel: "~/.codex/config.toml", settingsFormat: "toml" },
+];
 
 export const app = $state({
   route: parseRoute(location.hash),
   projects: [] as ProjectInfo[],
   sessions: [] as SessionInfo[],
+  harnesses: DEFAULT_HARNESSES,
   usage: null as Usage | null,
   greeting: null as Greeting | null,
   update: null as UpdateStatus | null,
@@ -117,6 +124,15 @@ export async function refreshUsage() {
     app.usage = {
       limits: next.limits ?? app.usage?.limits ?? null,
       month: next.month ?? app.usage?.month ?? null,
+      codex: next.codex
+        ? {
+            mode: next.codex.mode,
+            providerName: next.codex.providerName ?? app.usage?.codex?.providerName ?? null,
+            limits: next.codex.limits ?? app.usage?.codex?.limits ?? null,
+            month: next.codex.month ?? app.usage?.codex?.month ?? null,
+            spend: next.codex.spend ?? app.usage?.codex?.spend ?? null,
+          }
+        : app.usage?.codex ?? null,
       errors: next.errors,
     };
   } catch (e) { console.error("refreshUsage", e); }
@@ -205,6 +221,7 @@ export async function applyUpdate() {
 
 export function startPolling() {
   rememberProject(app.route);
+  api.harnesses().then(h => { if (h.length) app.harnesses = h; }).catch(console.error);
   refreshCore(); refreshUsage(); refreshGreeting(); refreshUpdate();
   setInterval(refreshCore, 5_000);
   setInterval(refreshUsage, 30_000); // server caches at 60s; 30s halves worst-case lag

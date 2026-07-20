@@ -1,10 +1,11 @@
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { mkdir } from "node:fs/promises";
+import { HARNESSES, type HarnessId } from "./harnesses";
 
-const SETTINGS_PATH = join(homedir(), ".claude", "settings.json");
-const CLAUDE_MD_PATH = join(homedir(), ".claude", "CLAUDE.md");
-const APP_CONFIG_PATH = join(homedir(), ".config", "claude-command", "config.json");
+const APP_CONFIG_PATH = join(homedir(), ".config", "harnessdeck", "config.json");
+// pre-rename location (Claude Command era) — read-only fallback
+const LEGACY_APP_CONFIG_PATH = join(homedir(), ".config", "claude-command", "config.json");
 
 export interface AppConfig {
   displayName: string;
@@ -25,6 +26,9 @@ const DEFAULT_APP_CONFIG: AppConfig = {
 export async function getAppConfig(): Promise<AppConfig> {
   try {
     return { ...DEFAULT_APP_CONFIG, ...(await Bun.file(APP_CONFIG_PATH).json()) };
+  } catch { /* fall through to the pre-rename path */ }
+  try {
+    return { ...DEFAULT_APP_CONFIG, ...(await Bun.file(LEGACY_APP_CONFIG_PATH).json()) };
   } catch {
     return { ...DEFAULT_APP_CONFIG };
   }
@@ -37,19 +41,26 @@ export async function setAppConfig(patch: Partial<AppConfig>): Promise<AppConfig
   return next;
 }
 
-export async function readSettings(): Promise<string> {
-  return Bun.file(SETTINGS_PATH).text();
+export async function readSettings(harness: HarnessId): Promise<string> {
+  try { return await Bun.file(HARNESSES[harness].settingsPath).text(); } catch { return ""; }
 }
 
-export async function writeSettings(text: string): Promise<void> {
-  JSON.parse(text); // validate before touching disk
-  await Bun.write(SETTINGS_PATH, text);
+export async function writeSettings(harness: HarnessId, text: string): Promise<void> {
+  const h = HARNESSES[harness];
+  if (h.settingsFormat === "json") {
+    JSON.parse(text); // validate before touching disk
+  } else if (h.settingsFormat === "toml") {
+    // Bun ships a TOML parser; validate when present, pass through otherwise
+    const toml = (Bun as unknown as { TOML?: { parse(t: string): unknown } }).TOML;
+    toml?.parse(text);
+  }
+  await Bun.write(h.settingsPath, text);
 }
 
-export async function readClaudeMd(): Promise<string> {
-  try { return await Bun.file(CLAUDE_MD_PATH).text(); } catch { return ""; }
+export async function readMd(harness: HarnessId): Promise<string> {
+  try { return await Bun.file(HARNESSES[harness].mdPath).text(); } catch { return ""; }
 }
 
-export async function writeClaudeMd(text: string): Promise<void> {
-  await Bun.write(CLAUDE_MD_PATH, text);
+export async function writeMd(harness: HarnessId, text: string): Promise<void> {
+  await Bun.write(HARNESSES[harness].mdPath, text);
 }
