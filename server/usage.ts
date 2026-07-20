@@ -191,6 +191,15 @@ const localYmd = (d: Date) =>
 export async function getMonth(): Promise<MonthUsage> {
   // 60s: short enough that the dashboard visibly ticks while sessions run
   if (monthCache.data && Date.now() - monthCache.at < 60_000) return monthCache.data;
+  try {
+    return await computeMonth();
+  } catch (e) {
+    if (monthCache.data) return monthCache.data; // serve stale over failing
+    throw e;
+  }
+}
+
+async function computeMonth(): Promise<MonthUsage> {
   const cfg = await getAppConfig();
   // window start: last renewal date when configured, else first of the calendar month
   const now = new Date();

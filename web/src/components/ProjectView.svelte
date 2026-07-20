@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { app, navigate, refreshCore } from "../lib/state.svelte";
+  import { app, navigate, projectSessions, refreshCore } from "../lib/state.svelte";
   import { api, fmtAgo } from "../lib/api";
   import Terminal from "./Terminal.svelte";
   import Mascot from "./Mascot.svelte";
 
   let { project }: { project: string } = $props();
 
-  const mySessions = $derived(app.sessions.filter(s => s.project === project));
+  const mySessions = $derived(projectSessions(project));
   const projInfo = $derived(app.projects.find(p => p.name === project));
 
   // Which session tab is open. The route is the source of truth (hotkeys

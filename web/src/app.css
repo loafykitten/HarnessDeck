@@ -83,10 +83,10 @@
   --glass-2:rgba(255,255,255,.58);
   --glass-brd:rgba(255,255,255,.75);
   --glass-brd-lit:rgba(255,255,255,.95);
-  /* dark ink on light sky */
+  /* dark ink on light sky — dim/faint stay firmly readable on white glass */
   --ink:#0b3550;
-  --ink-dim:#2e5f7e;
-  --ink-faint:#6b93aa;
+  --ink-dim:#1f4a66;
+  --ink-faint:#48708c;
   --ok:#23a94e; --ok-rgb:35,169,78;
   --shadow:rgba(20,90,140,.28);
   --shadow-lit:rgba(20,150,200,.22);
@@ -490,7 +490,7 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 .tl i:nth-child(1){background:#ff5f57;box-shadow:0 0 8px #ff5f5799}
 .tl i:nth-child(2){background:#febc2e;box-shadow:0 0 8px #febc2e99}
 .tl i:nth-child(3){background:#28c840;box-shadow:0 0 8px #28c84099}
-.term-bar .tt{font-family:ui-monospace,monospace;font-size:12px;color:var(--ink-faint);margin-left:6px;
+.term-bar .tt{font-family:ui-monospace,monospace;font-size:12px;color:var(--ink);margin-left:6px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .term-bar .rt{margin-left:auto;font-family:ui-monospace,monospace;font-size:10px;color:var(--ink-faint);letter-spacing:.12em;flex:none}
 
@@ -715,19 +715,29 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 :root[data-theme="aero"] .term-view .xterm .xterm-rows{text-shadow:none}
 :root[data-theme="aero"] .skill-editor{text-shadow:none}
 
+/* accent-colored text: the gel hues are gorgeous as chrome but too pale to
+   read on the light sky — swap in deepened versions for anything textual */
+:root[data-theme="aero"] .greet .weather .wx,
+:root[data-theme="aero"] .stat-sub b,
+:root[data-theme="aero"] .sess-tag,
+:root[data-theme="aero"] .tab.new{color:#177a41;text-shadow:none}
+:root[data-theme="aero"] .greet .whim,
+:root[data-theme="aero"] .ring-info .meta em{color:#0c7d70;text-shadow:none}
+:root[data-theme="aero"] .sess-status.waiting{color:#07749e}
+
 @media (prefers-reduced-motion:reduce){
   :root[data-theme="aero"] .orbs::before,
   :root[data-theme="aero"] .orbs::after{animation:none !important}
 }
 
 /* ============ MASCOT ============ */
-.mascot-track{position:relative;height:84px;margin-top:14px;overflow:hidden}
+.mascot-track{position:relative;height:98px;margin-top:14px;overflow:hidden}
 .mascot-roller{
-  position:absolute;bottom:4px;left:6px;width:40px;height:40px;
+  position:absolute;bottom:4px;left:6px;width:54px;height:54px;
   animation:mascot-roll 36s linear infinite;
 }
 .mascot-wheel{
-  width:40px;height:40px;color:var(--ink-dim);opacity:.75;
+  width:54px;height:54px;color:var(--ink-dim);opacity:.75;
   filter:drop-shadow(0 0 6px rgba(var(--accent-rgb),.35));
   animation:mascot-spin 36s linear infinite;
 }
@@ -744,7 +754,7 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
   100%{transform:rotate(0)}
 }
 .mascot-bubble{
-  position:absolute;bottom:46px;left:24px;white-space:nowrap;
+  position:absolute;bottom:60px;left:32px;white-space:nowrap;
   padding:5px 10px;border-radius:10px;font-size:12px;color:var(--ink);
   background:var(--glass-2);border:1px solid var(--glass-brd);
   backdrop-filter:blur(8px);

@@ -1,4 +1,4 @@
-import { app, navigate, gotoProjects } from "./state.svelte";
+import { app, navigate, gotoProjects, projectSessions } from "./state.svelte";
 import { triggerSlopmaxx } from "./mascot";
 
 // ⌃1 dashboard · ⌃2 projects (last active; press again to cycle, ⌃⇧2 backward)
@@ -18,7 +18,7 @@ function cycleProject(dir: 1 | -1) {
 function cycleSession(dir: 1 | -1) {
   const route = app.route;
   if (route.view !== "project") return;
-  const sess = app.sessions.filter(s => s.project === route.name);
+  const sess = projectSessions(route.name);
   if (sess.length < 2) return;
   const cur = route.session && sess.some(s => s.id === route.session) ? route.session : sess[0].id;
   const i = sess.findIndex(s => s.id === cur);

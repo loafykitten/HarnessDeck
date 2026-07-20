@@ -67,13 +67,22 @@ export function toggleTheme() {
   localStorage.setItem("cc-theme", next);
 }
 
+/** A project's sessions in stable tab order: creation time, not activity.
+    (The server sorts by activity for the dashboard, which would make tabs
+    reshuffle on every poll; id tie-breaks same-second creations.) */
+export function projectSessions(project: string): SessionInfo[] {
+  return app.sessions
+    .filter(s => s.project === project)
+    .sort((a, b) => a.created - b.created || a.id.localeCompare(b.id));
+}
+
 /** Is this session's terminal on screen right now? (No chime for what
     the user is already watching.) */
 function isOnScreen(s: SessionInfo): boolean {
   if (document.hidden) return false;
   const r = app.route;
   if (r.view !== "project" || r.name !== s.project) return false;
-  const mine = app.sessions.filter(x => x.project === s.project);
+  const mine = projectSessions(s.project);
   const activeId = r.session && mine.some(x => x.id === r.session) ? r.session : mine[0]?.id;
   return activeId === s.id;
 }
@@ -97,7 +106,17 @@ export async function refreshCore() {
 }
 
 export async function refreshUsage() {
-  try { app.usage = await api.usage(); } catch (e) { console.error("refreshUsage", e); }
+  try {
+    const next = await api.usage();
+    // Keep the last good half when one side fails (comes back null): blanking
+    // it would zero the bars and unmount the burn chart, then re-animate
+    // everything from scratch on the next good poll.
+    app.usage = {
+      limits: next.limits ?? app.usage?.limits ?? null,
+      month: next.month ?? app.usage?.month ?? null,
+      errors: next.errors,
+    };
+  } catch (e) { console.error("refreshUsage", e); }
 }
 
 export async function refreshGreeting() {

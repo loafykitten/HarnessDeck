@@ -40,12 +40,12 @@
 <div class="mascot-track" aria-hidden="true">
   <div class="mascot-roller">
     {#if visible}<div class="mascot-bubble">{phrase}</div>{/if}
-    <!-- ophanim: wheel-within-wheel, many-eyed (see Rail.svelte) -->
+    <!-- ophanim: wheel-within-wheel, many-eyed, claude-spark hub (see Rail.svelte) -->
     <svg class="mascot-wheel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
       <circle cx="12" cy="12" r="8.6"/>
       <ellipse cx="12" cy="12" rx="8.6" ry="3.4"/>
       <ellipse cx="12" cy="12" rx="3.4" ry="8.6"/>
-      <circle cx="12" cy="12" r="2.1"/>
+      <path stroke-width="1.1" d="M12 7.4V10.2M12 13.8V16.6M7.4 12H10.2M13.8 12H16.6M8.75 8.75 10.73 10.73M13.27 13.27 15.25 15.25M15.25 8.75 13.27 10.73M8.75 15.25 10.73 13.27"/>
       <circle cx="12" cy="12" r="0.7" fill="currentColor" stroke="none"/>
       <circle cx="18.1" cy="5.9" r="0.7" fill="currentColor" stroke="none"/>
       <circle cx="18.1" cy="18.1" r="0.7" fill="currentColor" stroke="none"/>
