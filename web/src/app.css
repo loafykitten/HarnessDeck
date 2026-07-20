@@ -173,7 +173,7 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 
 @media (prefers-reduced-motion:reduce){
   .bg,.orb,.crt,.glow::before,.bar i::after,.live-dot,.mini-dot.on,.tdot,
-  .mascot-roller,.mascot-wheel,.mascot-bubble{animation:none !important}
+  .mascot-roller,.mascot-wheel,.mascot-bubble,.mascot-hopper{animation:none !important}
 }
 
 /* ============ GLASS + GLOW PRIMITIVE ============ */
@@ -742,16 +742,28 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
   animation:mascot-spin 36s linear infinite;
 }
 /* roll + spin share one linear timeline, symmetric about 50%, so the wheel's
-   rotation reverses exactly when its travel does */
+   rotation reverses exactly when its travel does. `left` (not translateX)
+   because the travel distance depends on the track's width, and translateX
+   percentages resolve against the roller itself. */
 @keyframes mascot-roll{
-  0%{transform:translateX(0)}
-  50%{transform:translateX(min(60vw,480px))}
-  100%{transform:translateX(0)}
+  0%{left:6px}
+  50%{left:calc(100% - 60px)}
+  100%{left:6px}
 }
 @keyframes mascot-spin{
   0%{transform:rotate(0)}
   50%{transform:rotate(1080deg)}
   100%{transform:rotate(0)}
+}
+/* occasional little double-hop; lives on its own wrapper so it composes with
+   the roller's travel and the wheel's spin */
+.mascot-hopper{animation:mascot-hop 9s linear infinite}
+@keyframes mascot-hop{
+  0%,70%{transform:translateY(0)}
+  73%{transform:translateY(-14px)}
+  76%{transform:translateY(0)}
+  78.5%{transform:translateY(-7px)}
+  81%,100%{transform:translateY(0)}
 }
 .mascot-bubble{
   position:absolute;bottom:60px;left:32px;white-space:nowrap;
@@ -766,4 +778,7 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
   background:inherit;border:inherit;border-top:none;border-left:none;
   transform:rotate(45deg);
 }
+/* near the right edge the bubble would run off-screen — hang it to his left */
+.mascot-bubble.flip{left:auto;right:32px}
+.mascot-bubble.flip::after{left:auto;right:10px}
 @keyframes mascot-pop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
