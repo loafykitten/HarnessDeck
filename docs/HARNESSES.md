@@ -88,10 +88,27 @@ the mode by reading the config, toggle by making the smallest possible
 byte-preserving edit, and expose GET/PUT endpoints the dashboard toggle and
 Config view share.
 
-### 4. Things that deliberately stay Claude-only
+### 4. Updater chip + plan badge (per-harness)
 
-- The greeting whimsy line and the plan/renewal card (Anthropic OAuth).
-- The updater chip (`server/updates.ts` runs `claude update`).
+Each harness card's header shows a self-update chip and a plan badge:
+
+- **Updater**: add an entry to `updaters` in `server/updates.ts` — the
+  binary, its self-update args, and a `latest()` version lookup (npm
+  registry, vendor manifest, GitHub releases…). `GET /api/updates` returns
+  all harnesses keyed by id; `POST /api/updates/apply?harness=foo` runs the
+  update. The frontend chip (`updChip` snippet in `Dashboard.svelte`,
+  per-harness job state in `state.svelte.ts`) picks it up from there.
+- **Plan**: bespoke per vendor, like usage. Claude's comes from the
+  Anthropic OAuth profile (`server/usage.ts`); Codex's is decoded from the
+  `chatgpt_plan_type` / `chatgpt_subscription_active_until` claims in the
+  id_token JWT in `~/.codex/auth.json` (`getCodexPlan` in
+  `server/codex.ts`). Expose `{label, renewsAt}` in the harness's `/api/usage`
+  slice and render it with the `planBadge` snippet; omit it (null) when the
+  harness has no subscription concept.
+
+### 5. Things that deliberately stay Claude-only
+
+- The greeting whimsy line (Anthropic OAuth + headless `claude -p`).
 - Skill **generation** (`claude -p` scaffolds; new skills land in the
   default harness's dir — sync them over afterwards). Install-from-URL
   likewise targets the default harness.
@@ -99,7 +116,7 @@ Config view share.
 If a new harness should participate in any of these, generalize the module
 rather than forking it.
 
-### 5. Colors
+### 6. Colors
 
 Harness badge colors live in `web/src/app.css` (`.hx.claude`, `.hx.codex`).
 Give `foo` a `.hx.foo` rule or it renders in the neutral dim ink.
@@ -112,8 +129,9 @@ Give `foo` a `.hx.foo` rule or it renders in the neutral dim ink.
 | Sessions/tmux + status regex use | `server/sessions.ts` |
 | Skills multi-harness ownership | `server/skills.ts` |
 | Settings + instructions IO | `server/config.ts` |
-| Codex usage + auth toggle | `server/codex.ts` |
+| Codex usage + auth toggle + plan | `server/codex.ts` |
 | Claude usage | `server/usage.ts` |
+| Per-harness self-updaters | `server/updates.ts` |
 | Routes | `server/index.ts` |
 | Frontend types + API client | `web/src/lib/api.ts` |
 | Harness list in app state | `web/src/lib/state.svelte.ts` |

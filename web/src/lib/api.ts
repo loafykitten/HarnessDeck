@@ -39,6 +39,7 @@ export interface Usage {
       api: { tokens: number; costUSD: number };
       oauth: { tokens: number; costUSD: number };
     } | null;
+    plan: { label: string; renewsAt: string | null } | null;
   } | null;
   errors: string[];
 }
@@ -53,6 +54,7 @@ export interface UpdateStatus {
   updateAvailable: boolean; checkedAt: number;
   error: string | null; job: UpdateJob | null;
 }
+export type Updates = Record<HarnessId, UpdateStatus>;
 export interface AppConfig { displayName: string; zip: string; greetingEnabled: boolean; renewalDay: number | null }
 export interface SkillSummary { name: string; description: string; files: number; updated: number; harnesses: HarnessId[] }
 export interface SkillDetail {
@@ -93,8 +95,8 @@ export const api = {
     j<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   usage: () => j<Usage>("/api/usage"),
   greeting: () => j<Greeting>("/api/greeting"),
-  updates: (force = false) => j<UpdateStatus>(`/api/updates${force ? "?refresh=1" : ""}`),
-  applyUpdate: () => j<UpdateJob>("/api/updates/apply", { method: "POST" }),
+  updates: (force = false) => j<Updates>(`/api/updates${force ? "?refresh=1" : ""}`),
+  applyUpdate: (harness: HarnessId) => j<UpdateJob>(`/api/updates/apply?harness=${harness}`, { method: "POST" }),
   appConfig: () => j<AppConfig>("/api/config/app"),
   saveAppConfig: (cfg: Partial<AppConfig>) =>
     j<AppConfig>("/api/config/app", {

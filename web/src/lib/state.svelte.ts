@@ -1,4 +1,4 @@
-import { api, type Greeting, type HarnessMeta, type ProjectInfo, type SessionInfo, type UpdateStatus, type Usage } from "./api";
+import { api, type Greeting, type HarnessId, type HarnessMeta, type ProjectInfo, type SessionInfo, type Updates, type Usage } from "./api";
 import { chime } from "./sound";
 
 /** Fallback until GET /api/harnesses answers, so pickers render immediately. */
@@ -14,9 +14,10 @@ export const app = $state({
   harnesses: DEFAULT_HARNESSES,
   usage: null as Usage | null,
   greeting: null as Greeting | null,
-  update: null as UpdateStatus | null,
+  updates: null as Updates | null,
   updateChecking: false,
-  jobDisplayUntil: null as number | null, // finished-update chip retires at this time
+  // finished-update chips retire at these times, per harness
+  jobDisplayUntil: { claude: null, codex: null } as Record<HarnessId, number | null>,
   railExpanded: false,
   lastProject: localStorage.getItem("cc-last-project"),
 });
@@ -131,6 +132,9 @@ export async function refreshUsage() {
             limits: next.codex.limits ?? app.usage?.codex?.limits ?? null,
             month: next.codex.month ?? app.usage?.codex?.month ?? null,
             spend: next.codex.spend ?? app.usage?.codex?.spend ?? null,
+            // no stale fallback: getCodexPlan never throws, so a null here is
+            // a real "no plan" (logged out / API-key-only), not a blip
+            plan: next.codex.plan,
           }
         : app.usage?.codex ?? null,
       errors: next.errors,
@@ -147,7 +151,7 @@ export async function refreshGreeting() {
 export const JOB_DISPLAY_MS = 5 * 60_000;
 
 let updateWatch: ReturnType<typeof setInterval> | null = null;
-let jobExpiry: ReturnType<typeof setTimeout> | null = null;
+const jobExpiry: Record<HarnessId, ReturnType<typeof setTimeout> | null> = { claude: null, codex: null };
 
 /** A finished job outranks the resting state on the chip, but only for a while.
     The deadline lives in reactive state rather than in a `Date.now()` comparison
@@ -156,37 +160,39 @@ let jobExpiry: ReturnType<typeof setTimeout> | null = null;
     timer clears it locally, so the chip still retires on schedule even if the
     accompanying re-check fails. Reloading the page mid-window lands here too,
     since the server keeps serving the finished job. */
-function armJobDisplay(finishedAt: number | null) {
-  if (jobExpiry) { clearTimeout(jobExpiry); jobExpiry = null; }
+function armJobDisplay(h: HarnessId, finishedAt: number | null) {
+  const t = jobExpiry[h];
+  if (t) { clearTimeout(t); jobExpiry[h] = null; }
   const until = finishedAt === null ? null : finishedAt + JOB_DISPLAY_MS;
   if (until === null || until <= Date.now()) {
-    app.jobDisplayUntil = null;
+    app.jobDisplayUntil[h] = null;
     return;
   }
-  app.jobDisplayUntil = until;
-  jobExpiry = setTimeout(() => {
-    jobExpiry = null;
-    app.jobDisplayUntil = null; // retires the chip whether or not this succeeds
+  app.jobDisplayUntil[h] = until;
+  jobExpiry[h] = setTimeout(() => {
+    jobExpiry[h] = null;
+    app.jobDisplayUntil[h] = null; // retires the chip whether or not this succeeds
     refreshUpdate();
   }, until - Date.now());
 }
 
-/** While `claude update` runs, poll fast enough that the widget feels live;
-    stop as soon as it finishes so the idle dashboard stays quiet. */
+/** While a self-update runs, poll fast enough that the widget feels live;
+    stop as soon as none are running so the idle dashboard stays quiet. */
 function watchUpdateJob() {
   if (updateWatch) return;
   updateWatch = setInterval(async () => {
     await refreshUpdate();
-    if (app.update?.job?.status !== "running") {
+    const anyRunning = Object.values(app.updates ?? {}).some(u => u?.job?.status === "running");
+    if (!anyRunning) {
       clearInterval(updateWatch!);
       updateWatch = null;
     }
   }, 2_000);
 }
 
-/** `force` re-checks now (the manual refresh); otherwise the server's 30m
-    cache answers. The spinner is held a beat so a cache hit still reads as
-    "something happened". */
+/** `force` re-checks now (the manual refresh, both harnesses at once);
+    otherwise the server's cache answers. The spinner is held a beat so a
+    cache hit still reads as "something happened". */
 export async function refreshUpdate(force = false) {
   if (force) {
     if (app.updateChecking) return;
@@ -194,10 +200,12 @@ export async function refreshUpdate(force = false) {
   }
   const startedAt = Date.now();
   try {
-    app.update = await api.updates(force);
-    const job = app.update.job;
-    if (job?.status === "running") watchUpdateJob();
-    else armJobDisplay(job?.finishedAt ?? null);
+    app.updates = await api.updates(force);
+    for (const h of ["claude", "codex"] as HarnessId[]) {
+      const job = app.updates[h]?.job;
+      if (job?.status === "running") watchUpdateJob();
+      else armJobDisplay(h, job?.finishedAt ?? null);
+    }
   } catch (e) {
     console.error("refreshUpdate", e);
   } finally {
@@ -209,12 +217,12 @@ export async function refreshUpdate(force = false) {
   }
 }
 
-export async function applyUpdate() {
-  if (app.update?.job?.status === "running") return;
+export async function applyUpdate(h: HarnessId) {
+  if (app.updates?.[h]?.job?.status === "running") return;
   try {
-    const job = await api.applyUpdate();
-    if (app.update) app.update = { ...app.update, job };
-    armJobDisplay(null); // a new run supersedes the previous outcome
+    const job = await api.applyUpdate(h);
+    if (app.updates?.[h]) app.updates[h] = { ...app.updates[h], job };
+    armJobDisplay(h, null); // a new run supersedes the previous outcome
     watchUpdateJob();
   } catch (e) { console.error("applyUpdate", e); }
 }

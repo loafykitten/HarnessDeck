@@ -6,7 +6,7 @@ import { listProjects } from "./projects";
 import { createSession, hasSession, killSession, listSessions, newlineIntoSession, typeIntoSession } from "./sessions";
 import { getLimits, getMonth, invalidateUsageCaches } from "./usage";
 import { getGreeting } from "./greeting";
-import { getUpdateStatus, startUpdate } from "./updates";
+import { updaters } from "./updates";
 import {
   getAppConfig, setAppConfig,
   readSettings, writeSettings, readMd, writeMd,
@@ -16,7 +16,7 @@ import {
   installFromUrl, generateSkill, getJob, syncSkill,
 } from "./skills";
 import { DEFAULT_HARNESS, harnessMeta, isHarnessId, type HarnessId } from "./harnesses";
-import { getCodexLimits, getCodexMode, getCodexMonth, getCodexProvider, getCodexSpend, invalidateCodexCaches, setCodexMode } from "./codex";
+import { getCodexLimits, getCodexMode, getCodexMonth, getCodexPlan, getCodexProvider, getCodexSpend, invalidateCodexCaches, setCodexMode } from "./codex";
 import { ensureTailscaleServe } from "./tailscale";
 
 const PORT = 4553;
@@ -105,9 +105,9 @@ const server = Bun.serve<WsData>({
 
       if (pathname === "/api/usage" && req.method === "GET") {
         // Partial-failure tolerant: each piece degrades independently
-        const [limits, month, codexMode, codexLimits, codexMonth, codexProvider, codexSpend] = await Promise.allSettled([
+        const [limits, month, codexMode, codexLimits, codexMonth, codexProvider, codexSpend, codexPlan] = await Promise.allSettled([
           getLimits(), getMonth(), getCodexMode(), getCodexLimits(), getCodexMonth(),
-          getCodexProvider(), getCodexSpend(),
+          getCodexProvider(), getCodexSpend(), getCodexPlan(),
         ]);
         return json({
           limits: limits.status === "fulfilled" ? limits.value : null,
@@ -118,6 +118,7 @@ const server = Bun.serve<WsData>({
             limits: codexLimits.status === "fulfilled" ? codexLimits.value : null,
             month: codexMonth.status === "fulfilled" ? codexMonth.value : null,
             spend: codexSpend.status === "fulfilled" ? codexSpend.value : null,
+            plan: codexPlan.status === "fulfilled" ? codexPlan.value : null,
           },
           errors: [
             ...(limits.status === "rejected" ? [`limits: ${limits.reason}`] : []),
@@ -144,12 +145,19 @@ const server = Bun.serve<WsData>({
         return json(await getGreeting());
       }
 
-      // ---- Claude Code updates ----
+      // ---- Harness self-updates (claude update / codex update) ----
       if (pathname === "/api/updates" && req.method === "GET") {
-        return json(await getUpdateStatus(url.searchParams.get("refresh") === "1"));
+        const force = url.searchParams.get("refresh") === "1";
+        const [claude, codex] = await Promise.all([
+          updaters.claude.getStatus(force),
+          updaters.codex.getStatus(force),
+        ]);
+        return json({ claude, codex });
       }
       if (pathname === "/api/updates/apply" && req.method === "POST") {
-        const res = startUpdate();
+        const harness = harnessParam(url);
+        if (!harness) return err("unknown harness");
+        const res = updaters[harness].start();
         return "error" in res ? err(res.error, 409) : json(res, 202);
       }
 

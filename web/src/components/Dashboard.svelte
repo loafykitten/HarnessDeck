@@ -1,11 +1,8 @@
 <script lang="ts">
   import { app, applyUpdate, navigate, refreshUpdate, refreshUsage } from "../lib/state.svelte";
-  import { api, fmtAgo, fmtClock, fmtDate, fmtTokens, fmtUSD, initials, projectGradient, type CodexMode } from "../lib/api";
-
-  const RING_C = 333; // 2πr for r=53
-
-  // SMIL animations ignore the reduced-motion media query, so gate them here.
-  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  import { api, fmtAgo, fmtClock, fmtDate, fmtTokens, fmtUSD, initials, projectGradient, type CodexMode, type HarnessId } from "../lib/api";
+  import UsageRing from "./UsageRing.svelte";
+  import BurnChart from "./BurnChart.svelte";
 
   const clampPct = (p: number | null | undefined) =>
     p == null ? null : Math.max(0, Math.min(100, p));
@@ -22,46 +19,38 @@
     [...app.sessions].sort((a, b) => a.created - b.created || a.id.localeCompare(b.id))
   );
 
-  // daily token burn across the billing window
-  const burnDays = $derived(app.usage?.month?.days ?? []);
-  const burnMax = $derived(Math.max(...burnDays.map(d => d.tokens), 1));
-  let burnTip = $state<number | null>(null);
-  function fmtDay(iso: string): string {
-    return new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  }
-
-  // ---- Claude Code updater ----
-  const upd = $derived(app.update);
-  const job = $derived(app.update?.job ?? null);
-  const updating = $derived(job?.status === "running");
+  // ---- per-harness self-updater chips ----
   // A finished run stays on screen briefly so the outcome is seen, then the
-  // widget falls back to the plain version line. Both outcomes are age-gated:
+  // chip falls back to the plain version line. Both outcomes are age-gated:
   // the server keeps the last job forever, so an ungated failure would pin the
   // chip to "Update failed" for the life of the process. (refreshUpdate
   // schedules a re-fetch at the end of the window — Date.now() isn't reactive.)
-  const jobFresh = $derived(!!job?.finishedAt && app.jobDisplayUntil !== null);
-  const justUpdated = $derived(job?.status === "done" && jobFresh);
-  const updateFailed = $derived(job?.status === "error" && jobFresh);
-  const canUpdate = $derived(!!upd?.updateAvailable && !updating);
-
-  const updText = $derived(
-    updating ? `Updating to ${upd?.latest ?? "the latest version"}…`
-      : updateFailed ? "Update failed"
-      : justUpdated ? (upd?.installed ? `Updated to ${upd.installed}` : "Update complete")
-      : upd?.updateAvailable ? `Claude Code ${upd.latest} available`
-      : upd?.installed ? `Claude Code ${upd.installed}`
-      : app.updateChecking ? "Checking…"
-      : "Version unknown",
-  );
-
-  const updTitle = $derived(
-    updating ? "Running claude update — running sessions keep their current version until they restart."
-      : updateFailed ? `claude update failed:\n${job?.output ?? ""}`
-      : upd?.error ? upd.error
-      : upd?.updateAvailable ? `You're on ${upd.installed}. Click Update to install ${upd.latest}.`
-      : upd ? `Up to date · checked ${fmtAgo(upd.checkedAt)}`
-      : "Checking for a newer Claude Code",
-  );
+  function updView(h: HarnessId, label: string) {
+    const u = app.updates?.[h] ?? null;
+    const job = u?.job ?? null;
+    const updating = job?.status === "running";
+    const jobFresh = !!job?.finishedAt && app.jobDisplayUntil[h] !== null;
+    const justUpdated = job?.status === "done" && jobFresh;
+    const failed = job?.status === "error" && jobFresh;
+    return {
+      updating, failed, justUpdated,
+      ready: !!u?.updateAvailable,
+      canUpdate: !!u?.updateAvailable && !updating,
+      text: updating ? `Updating to ${u?.latest ?? "the latest version"}…`
+        : failed ? "Update failed"
+        : justUpdated ? (u?.installed ? `Updated to ${u.installed}` : "Update complete")
+        : u?.updateAvailable ? `${label} ${u.latest} available`
+        : u?.installed ? `${label} ${u.installed}`
+        : app.updateChecking ? "Checking…"
+        : "Version unknown",
+      title: updating ? `Running ${h} update — running sessions keep their current version until they restart.`
+        : failed ? `${h} update failed:\n${job?.output ?? ""}`
+        : u?.error ? u.error
+        : u?.updateAvailable ? `You're on ${u.installed}. Click Update to install ${u.latest}.`
+        : u ? `Up to date · checked ${fmtAgo(u.checkedAt)}`
+        : `Checking for a newer ${label}`,
+    };
+  }
 
   function remaining(iso: string | null): string {
     if (!iso) return "";
@@ -114,131 +103,89 @@
   </div>
   <div class="head-side">
     <span class="pill live"><span class="live-dot"></span> {liveCount} session{liveCount === 1 ? "" : "s"} live</span>
-
-    <div class="pill upd" class:ready={upd?.updateAvailable} class:busy={updating}
-      class:failed={updateFailed} class:fresh={justUpdated} title={updTitle}>
-      <span class="upd-dot"></span>
-      <span class="upd-text">{updText}</span>
-      {#if canUpdate}
-        <button class="upd-go" onclick={applyUpdate}>Update</button>
-      {/if}
-      <button class="upd-check" onclick={() => refreshUpdate(true)} disabled={app.updateChecking || updating}
-        aria-label="Check for updates now">
-        <svg class:spin={app.updateChecking || updating} viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-          <path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 4v7h-7"/>
-        </svg>
-      </button>
-    </div>
-    <div class="plan-card glass lit">
-      <span class="pk">Plan</span>
-      <span class="plan-badge"><span class="spk"></span><b>{app.usage?.limits?.plan?.label ?? "Claude"}</b></span>
-      {#if app.usage?.limits?.plan?.renewsAt}
-        <span class="plan-renew">renews {fmtDate(app.usage.limits.plan.renewsAt)}</span>
-      {/if}
-    </div>
   </div>
 </div>
 
-<div class="grid usage-grid">
-  <div class="glass glow card ring-card">
-    <div class="ring">
-      <svg width="126" height="126" viewBox="0 0 126 126">
-        <defs>
-          <linearGradient id="rg" x1="0" y1="0" x2="1" y2="1">
-            {#if !reduceMotion}
-              <animate attributeName="x1" values="0;1;1;0;0" dur="3s" repeatCount="indefinite"/>
-              <animate attributeName="y1" values="0;0;1;1;0" dur="3s" repeatCount="indefinite"/>
-              <animate attributeName="x2" values="1;0;0;1;1" dur="3s" repeatCount="indefinite"/>
-              <animate attributeName="y2" values="1;1;0;0;1" dur="3s" repeatCount="indefinite"/>
-            {/if}
-            <stop offset="0" stop-color="var(--accent)"/>
-            <stop offset="0.5" stop-color="var(--accent-3)"/>
-            <stop offset="1" stop-color="var(--accent-2)"/>
-          </linearGradient>
-          <filter id="arcglow" x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="4">
-              {#if !reduceMotion}
-                <animate attributeName="stdDeviation" values="3;8;3" dur="2s" repeatCount="indefinite"/>
-              {/if}
-            </feGaussianBlur>
-          </filter>
-        </defs>
-        <circle cx="63" cy="63" r="53" fill="none" stroke="var(--ring-track)" stroke-width="13"/>
-        <circle class="arc-glow" cx="63" cy="63" r="53" fill="none" stroke="url(#rg)" stroke-width="16" stroke-linecap="round"
-          filter="url(#arcglow)"
-          stroke-dasharray={RING_C}
-          stroke-dashoffset={RING_C * (1 - (fivePct ?? 0) / 100)}/>
-        <circle class="arc" cx="63" cy="63" r="53" fill="none" stroke="url(#rg)" stroke-width="13" stroke-linecap="round"
-          stroke-dasharray={RING_C}
-          stroke-dashoffset={RING_C * (1 - (fivePct ?? 0) / 100)}/>
-      </svg>
-      <div class="val"><b>{fivePct ?? "–"}%</b><small>USED</small></div>
-    </div>
-    <div class="ring-info">
-      <h3>5-hour block</h3>
-      <div class="big">Current window</div>
-      <div class="meta">
-        Resets <em>{fmtClock(app.usage?.limits?.fiveHour?.resetsAt ?? null)}</em><br>
-        {remaining(app.usage?.limits?.fiveHour?.resetsAt ?? null)}
-      </div>
-    </div>
-  </div>
-
-  <div class="glass glow card">
-    <h3>Weekly quota</h3>
-    <div class="card-sub">Rolling 7-day allowance</div>
-    <div class="bar-wrap">
-      <div class="bar-num">{weekPct ?? "–"}<span>%</span></div>
-      <div class="bar-label"><span>all models</span><b>{weekPct ?? "–"}%</b></div>
-      <div class="bar-frame"><div class="bar"><span class="bar-glow" style="width:{weekPct ?? 0}%"></span><i style="width:{weekPct ?? 0}%"></i></div></div>
-      {#if app.usage?.limits?.weeklyModel}
-        <div class="bar-label"><span>{app.usage.limits.weeklyModel.model}</span><b>{app.usage.limits.weeklyModel.pct}%</b></div>
-        <div class="bar-frame"><div class="bar sub"><span class="bar-glow alt" style="width:{modelPct ?? 0}%"></span><i class="alt" style="width:{modelPct ?? 0}%"></i></div></div>
-      {/if}
-      <div class="reset">Resets <b>{fmtClock(app.usage?.limits?.weekly?.resetsAt ?? null)}</b></div>
-    </div>
-  </div>
-
-  <div class="glass glow card">
-    <h3>{app.usage?.month?.since ? "This billing cycle" : "This month"}</h3>
-    <div class="stat-big">{app.usage?.month ? fmtTokens(app.usage.month.totalTokens) : "–"}</div>
-    <div class="stat-sub">
-      tokens · <b>{app.usage?.month ? fmtUSD(app.usage.month.costUSD) : "–"}</b> API-equivalent
-      {#if app.usage?.month?.since}<br>since {fmtDate(app.usage.month.since)}{/if}
-    </div>
-    {#if burnDays.length > 1}
-      <div class="burn" role="img"
-        aria-label="Daily token burn; peak {fmtTokens(burnMax)} on {fmtDay(burnDays.reduce((a, b) => b.tokens > a.tokens ? b : a).date)}">
-        {#each burnDays as d, i (d.date)}
-          <div class="burn-band" role="presentation"
-            onpointerenter={() => burnTip = i} onpointerleave={() => burnTip = null}>
-            {#if d.tokens > 0}
-              <i class:today={i === burnDays.length - 1} class:hot={i === burnTip}
-                style="height:{d.tokens / burnMax * 100}%"></i>
-            {/if}
-          </div>
-        {/each}
-        {#if burnTip !== null && burnDays[burnTip]}
-          <div class="burn-tip" style="left:clamp(46px, {(burnTip + 0.5) / burnDays.length * 100}%, calc(100% - 46px))">
-            <b>{fmtTokens(burnDays[burnTip].tokens)} tokens</b>
-            <span>{fmtDay(burnDays[burnTip].date)} · {fmtUSD(burnDays[burnTip].costUSD)}</span>
-          </div>
-        {/if}
-      </div>
-      <div class="burn-axis">
-        <span>{fmtDay(burnDays[0].date)}</span>
-        <span>peak {fmtTokens(burnMax)}/day</span>
-        <span>today</span>
-      </div>
+{#snippet updChip(h: HarnessId, label: string)}
+  {@const v = updView(h, label)}
+  <div class="pill upd" class:ready={v.ready} class:busy={v.updating}
+    class:failed={v.failed} class:fresh={v.justUpdated} title={v.title}>
+    <span class="upd-dot"></span>
+    <span class="upd-text">{v.text}</span>
+    {#if v.canUpdate}
+      <button class="upd-go" onclick={() => applyUpdate(h)}>Update</button>
     {/if}
+    <button class="upd-check" onclick={() => refreshUpdate(true)} disabled={app.updateChecking || v.updating}
+      aria-label="Check for updates now">
+      <svg class:spin={app.updateChecking || v.updating} viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 4v7h-7"/>
+      </svg>
+    </button>
+  </div>
+{/snippet}
+
+{#snippet planBadge(plan: { label: string; renewsAt: string | null })}
+  <span class="hc-plan">
+    <span class="plan-badge"><span class="spk"></span><b>{plan.label}</b></span>
+    {#if plan.renewsAt}<span class="plan-renew">renews {fmtDate(plan.renewsAt)}</span>{/if}
+  </span>
+{/snippet}
+
+<div class="glass glow card harness-card">
+  <div class="hc-head">
+    <h3 class="hc-claude">Claude</h3>
+    <div class="hc-right">
+      {@render updChip("claude", "Claude Code")}
+      {#if app.usage?.limits?.plan}
+        {@render planBadge(app.usage.limits.plan)}
+      {/if}
+    </div>
+  </div>
+  <div class="hc-body">
+    <div class="hc-cell ring-card">
+      <UsageRing idp="cl" pct={fivePct}/>
+      <div class="ring-info">
+        <h3>5-hour block</h3>
+        <div class="big">Current window</div>
+        <div class="meta">
+          Resets <em>{fmtClock(app.usage?.limits?.fiveHour?.resetsAt ?? null)}</em><br>
+          {remaining(app.usage?.limits?.fiveHour?.resetsAt ?? null)}
+        </div>
+      </div>
+    </div>
+
+    <div class="hc-cell">
+      <h3>Weekly quota</h3>
+      <div class="card-sub">Rolling 7-day allowance</div>
+      <div class="bar-wrap">
+        <div class="bar-num">{weekPct ?? "–"}<span>%</span></div>
+        <div class="bar-label"><span>all models</span><b>{weekPct ?? "–"}%</b></div>
+        <div class="bar-frame"><div class="bar"><span class="bar-glow" style="width:{weekPct ?? 0}%"></span><i style="width:{weekPct ?? 0}%"></i></div></div>
+        {#if app.usage?.limits?.weeklyModel}
+          <div class="bar-label"><span>{app.usage.limits.weeklyModel.model}</span><b>{app.usage.limits.weeklyModel.pct}%</b></div>
+          <div class="bar-frame"><div class="bar sub"><span class="bar-glow alt" style="width:{modelPct ?? 0}%"></span><i class="alt" style="width:{modelPct ?? 0}%"></i></div></div>
+        {/if}
+        <div class="reset">Resets <b>{fmtClock(app.usage?.limits?.weekly?.resetsAt ?? null)}</b></div>
+      </div>
+    </div>
+
+    <div class="hc-cell">
+      <h3>{app.usage?.month?.since ? "This billing cycle" : "This month"}</h3>
+      <div class="stat-big">{app.usage?.month ? fmtTokens(app.usage.month.totalTokens) : "–"}</div>
+      <div class="stat-sub">
+        tokens · <b>{app.usage?.month ? fmtUSD(app.usage.month.costUSD) : "–"}</b> API-equivalent
+        {#if app.usage?.month?.since}<br>since {fmtDate(app.usage.month.since)}{/if}
+      </div>
+      <BurnChart days={app.usage?.month?.days ?? []}/>
+    </div>
   </div>
 </div>
 
 {#if cx}
-  <div class="glass glow card codex-card">
-    <div class="cx-head">
-      <h3>Codex</h3>
+  <div class="glass glow card harness-card">
+    <div class="hc-head">
+      <h3 class="hc-codex">Codex</h3>
       <div class="je-modes" class:cx-busy={cxBusy}>
         <button class="je-mode" class:on={cx.mode === "oauth"} disabled={cxBusy}
           title="Comment out model_provider in ~/.codex/config.toml — Codex uses your ChatGPT login"
@@ -252,43 +199,72 @@
         {:else if cx.mode === "oauth"}signed in with ChatGPT — usage draws on your subscription's windows
         {:else}pay-as-you-go on your {cx.providerName ?? "API"} key{/if}
       </span>
+      <div class="hc-right">
+        {@render updChip("codex", "Codex")}
+        {#if cx.plan}
+          {@render planBadge(cx.plan)}
+        {/if}
+      </div>
     </div>
-
-    <div class="cx-body">
+    <div class="hc-body">
       {#if cx.mode === "oauth"}
-        <div class="cx-bars">
-          <div class="bar-label"><span>5-hour window</span><b>{cxFive ?? "–"}%</b></div>
-          <div class="bar-frame"><div class="bar sub"><span class="bar-glow" style="width:{cxFive ?? 0}%"></span><i style="width:{cxFive ?? 0}%"></i></div></div>
-          <div class="bar-label"><span>weekly</span><b>{cxWeek ?? "–"}%</b></div>
-          <div class="bar-frame"><div class="bar sub"><span class="bar-glow alt" style="width:{cxWeek ?? 0}%"></span><i class="alt" style="width:{cxWeek ?? 0}%"></i></div></div>
-          <div class="reset">
-            {#if cx.limits?.fiveHour?.resetsAt}Resets <b>{fmtClock(cx.limits.fiveHour.resetsAt)}</b> · weekly <b>{fmtClock(cx.limits?.weekly?.resetsAt ?? null)}</b>{/if}
-            {#if cx.limits?.asOf}<span class="cx-asof">snapshot {fmtAgo(new Date(cx.limits.asOf).getTime())}</span>{/if}
+        <div class="hc-cell ring-card">
+          <UsageRing idp="cx" pct={cxFive}/>
+          <div class="ring-info">
+            <h3>5-hour window</h3>
+            <div class="big">Current window</div>
+            <div class="meta">
+              Resets <em>{fmtClock(cx.limits?.fiveHour?.resetsAt ?? null)}</em><br>
+              {remaining(cx.limits?.fiveHour?.resetsAt ?? null)}
+              {#if cx.limits?.asOf}<br>snapshot {fmtAgo(new Date(cx.limits.asOf).getTime())}{/if}
+            </div>
           </div>
         </div>
-        <div class="cx-stat">
-          <div class="cx-num">{cxSpend ? fmtTokens(cxSpend.oauth.tokens) : "–"}</div>
-          <div class="cx-sub">subscription tokens this month<br>{cxSpend ? fmtUSD(cxSpend.oauth.costUSD) : "–"} API-equivalent value</div>
-        </div>
-        {#if cxSpend && cxSpend.api.tokens > 0}
-          <div class="cx-stat cx-dim">
-            <div class="cx-sub">API key this month<br>{fmtTokens(cxSpend.api.tokens)} tokens · {fmtUSD(cxSpend.api.costUSD)}</div>
+
+        <div class="hc-cell">
+          <h3>Weekly quota</h3>
+          <div class="card-sub">Rolling 7-day allowance</div>
+          <div class="bar-wrap">
+            <div class="bar-num">{cxWeek ?? "–"}<span>%</span></div>
+            <div class="bar-label"><span>all usage</span><b>{cxWeek ?? "–"}%</b></div>
+            <div class="bar-frame"><div class="bar"><span class="bar-glow" style="width:{cxWeek ?? 0}%"></span><i style="width:{cxWeek ?? 0}%"></i></div></div>
+            <div class="reset">Resets <b>{fmtClock(cx.limits?.weekly?.resetsAt ?? null)}</b></div>
           </div>
-        {/if}
+        </div>
+
+        <div class="hc-cell">
+          <h3>This month</h3>
+          <div class="stat-big">{cxSpend ? fmtTokens(cxSpend.oauth.tokens) : "–"}</div>
+          <div class="stat-sub">
+            subscription tokens · <b>{cxSpend ? fmtUSD(cxSpend.oauth.costUSD) : "–"}</b> API-equivalent
+            {#if cxSpend && cxSpend.api.tokens > 0}<br>plus {fmtTokens(cxSpend.api.tokens)} tokens · {fmtUSD(cxSpend.api.costUSD)} on your API key{/if}
+          </div>
+          <!-- the daily series has no per-auth split, so the chart is all
+               Codex usage — caption it so it can't be read as subscription-only -->
+          <div class="card-sub">daily burn · all Codex usage</div>
+          <BurnChart days={cx.month?.days ?? []}/>
+        </div>
       {:else}
-        <div class="cx-stat">
-          <div class="cx-num">{cxSpend ? fmtUSD(cxSpend.api.costUSD) : "–"}</div>
-          <div class="cx-sub">API spend this month</div>
+        <div class="hc-cell">
+          <h3>API spend</h3>
+          <div class="stat-big">{cxSpend ? fmtUSD(cxSpend.api.costUSD) : "–"}</div>
+          <div class="stat-sub">this month on your {cx.providerName ?? "API"} key</div>
         </div>
-        <div class="cx-stat">
-          <div class="cx-num">{cxSpend ? fmtTokens(cxSpend.api.tokens) : "–"}</div>
-          <div class="cx-sub">API-key tokens this month</div>
-        </div>
-        {#if cxSpend && cxSpend.oauth.tokens > 0}
-          <div class="cx-stat cx-dim">
-            <div class="cx-sub">ChatGPT subscription this month<br>{fmtTokens(cxSpend.oauth.tokens)} tokens · {fmtUSD(cxSpend.oauth.costUSD)} API-equivalent</div>
+
+        <div class="hc-cell">
+          <h3>API-key tokens</h3>
+          <div class="stat-big">{cxSpend ? fmtTokens(cxSpend.api.tokens) : "–"}</div>
+          <div class="stat-sub">
+            pay-as-you-go this month
+            {#if cxSpend && cxSpend.oauth.tokens > 0}<br>plus {fmtTokens(cxSpend.oauth.tokens)} subscription tokens · {fmtUSD(cxSpend.oauth.costUSD)} API-equivalent{/if}
           </div>
-        {/if}
+        </div>
+
+        <div class="hc-cell">
+          <h3>Daily burn</h3>
+          <div class="card-sub">All Codex usage this month</div>
+          <BurnChart days={cx.month?.days ?? []}/>
+        </div>
       {/if}
     </div>
   </div>
@@ -332,28 +308,34 @@
 </div>
 
 <style>
-  /* Codex card — one wide strip under the Claude usage grid */
-  .codex-card{margin-bottom:16px}
-  .cx-head{display:flex;align-items:center;gap:14px}
-  .cx-head h3{margin:0}
-  .cx-note{font-size:11px;color:var(--ink-faint);margin-left:auto;text-align:right}
+  /* Harness rows — one wide card per harness, its widgets side by side.
+     The widgets themselves (ring, bars, stat + burn) are the global app.css
+     ones, unchanged; only this row shell is new. */
+  .harness-card{margin-bottom:16px}
+  .hc-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;row-gap:8px}
+  .hc-head h3{margin:0}
+  .hc-claude{color:var(--accent)}
+  .hc-codex{color:var(--accent-3)}
+  .hc-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+  /* plan-badge is 16px for the old plan card; header scale is smaller */
+  .hc-plan{display:inline-flex;align-items:baseline;gap:8px}
+  .hc-plan :global(.plan-badge){font-size:14px}
+  .cx-note{font-size:11px;color:var(--ink-faint);flex:1 1 120px;min-width:0;text-align:right;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .cx-err{color:var(--accent-2)}
   .cx-busy{opacity:.55;pointer-events:none}
-  .cx-body{display:flex;align-items:flex-end;gap:34px;margin-top:14px}
-  .cx-bars{flex:1;max-width:520px}
-  .cx-bars .bar-label:first-child{margin-top:0}
-  /* These bars are much wider than the Claude weekly card's, so the global
-     160px-period animated gradient reads as repeating stripes here. Use one
-     smooth static gradient across the full fill instead. */
-  .cx-bars .bar i::before,.cx-bars .bar-glow::before{content:none}
-  .cx-bars .bar-glow{background:linear-gradient(90deg,var(--accent),var(--accent-2))}
-  .cx-bars .bar-glow.alt{background:linear-gradient(90deg,var(--accent-3),var(--accent-2))}
-  .cx-asof{margin-left:12px;color:var(--ink-faint)}
-  .cx-stat{flex:none}
-  .cx-num{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.1;color:var(--ink)}
-  .cx-sub{font-size:11px;color:var(--ink-faint);margin-top:3px;line-height:1.5}
-  .cx-dim{margin-left:auto;text-align:right}
-  @media (max-width:900px){.cx-body{flex-wrap:wrap;gap:18px}}
+  .hc-body{display:grid;grid-template-columns:1.3fr 1fr 1fr;margin-top:16px}
+  .hc-cell{min-width:0;padding:0 26px}
+  .hc-cell:first-child{padding-left:0}
+  .hc-cell:last-child{padding-right:0}
+  .hc-cell + .hc-cell{border-left:1px solid var(--glass-brd)}
+  @media (max-width:980px){
+    .hc-body{grid-template-columns:1fr}
+    .hc-cell{padding:20px 0}
+    .hc-cell:first-child{padding-top:0}
+    .hc-cell:last-child{padding-bottom:0}
+    .hc-cell + .hc-cell{border-left:0;border-top:1px solid var(--glass-brd)}
+  }
 
   /* Claude Code updater chip — quiet at rest, lit when an update is waiting */
   .upd{gap:9px;padding-right:6px;color:var(--ink-dim)}

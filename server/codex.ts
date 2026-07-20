@@ -68,6 +68,34 @@ export async function getCodexProvider(): Promise<string | null> {
   return id;
 }
 
+export interface CodexPlan {
+  label: string;          // "ChatGPT Plus"
+  renewsAt: string | null; // subscription_active_until
+}
+
+/** The ChatGPT plan rides in the id_token JWT that `codex login` stores in
+    ~/.codex/auth.json — there is no profile endpoint to ask. The claim names
+    the plan tier and the current subscription window's end (≈ renewal date).
+    Null when codex has never logged in with ChatGPT (API-key-only setups). */
+export async function getCodexPlan(): Promise<CodexPlan | null> {
+  try {
+    const auth = await Bun.file(join(CODEX_HOME, "auth.json")).json();
+    const idToken: string = auth?.tokens?.id_token;
+    if (!idToken) return null;
+    const payload = JSON.parse(
+      Buffer.from(idToken.split(".")[1], "base64url").toString(),
+    )["https://api.openai.com/auth"];
+    const plan: string = payload?.chatgpt_plan_type;
+    if (!plan) return null;
+    return {
+      label: `ChatGPT ${plan.charAt(0).toUpperCase()}${plan.slice(1)}`,
+      renewsAt: payload.chatgpt_subscription_active_until ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ---------- OAuth rate limits (5h / weekly windows) ----------
 
 /** Codex records its ChatGPT rate-limit state in every token_count event it
