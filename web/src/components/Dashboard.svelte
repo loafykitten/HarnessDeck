@@ -8,6 +8,14 @@
   const weekPct = $derived(app.usage?.limits?.weekly?.pct ?? null);
   const liveCount = $derived(app.sessions.length);
 
+  // Stable render order: the server sorts sessions by activity, which reshuffles
+  // every 5s poll — that moves the keyed rows in the DOM and restarts their CSS
+  // animations (status pulse). Sort by creation time (id tie-breaks) so a row
+  // keeps its slot across refreshes; recency still shows via "active … ago".
+  const sessions = $derived(
+    [...app.sessions].sort((a, b) => a.created - b.created || a.id.localeCompare(b.id))
+  );
+
   // daily token burn across the billing window
   const burnDays = $derived(app.usage?.month?.days ?? []);
   const burnMax = $derived(Math.max(...burnDays.map(d => d.tokens), 1));
@@ -138,7 +146,7 @@
     <h3>Active sessions</h3>
     <div class="card-sub">One click to jump in</div>
     <div class="sess-list">
-      {#each app.sessions as s, i (s.id)}
+      {#each sessions as s, i (s.id)}
         <button class="sess-item" onclick={() => navigate({ view: "project", name: s.project, session: s.id })}>
           <div class="sess-ico" class:alt={i % 2 === 1}>{i % 2 === 0 ? "◈" : "⬡"}</div>
           <div class="sess-meta"><b>{s.project}</b><div class="s">active {fmtAgo(s.activity)}</div></div>

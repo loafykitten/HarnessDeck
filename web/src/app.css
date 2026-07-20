@@ -204,7 +204,7 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
      rgba(var(--accent-2-rgb),.9) 60%,
      rgba(var(--accent-rgb),.9));
   background-size:280% 280%;
-  animation:borderflow 9s ease infinite;
+  animation:borderflow 9s linear infinite;
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
   -webkit-mask-composite:xor;mask-composite:exclude;
   filter:drop-shadow(0 0 5px rgba(var(--accent-rgb),.35));
@@ -361,13 +361,16 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 .bar.sub{height:9px}
 .bar i.alt{background:linear-gradient(90deg,var(--accent-3),var(--accent-2));
   box-shadow:0 0 14px var(--accent-3),0 0 22px -4px rgba(var(--accent-2-rgb),.7)}
-.bar i{display:block;height:100%;border-radius:999px;position:relative;
+.bar i{display:block;height:100%;border-radius:999px;position:relative;overflow:hidden;
   background:linear-gradient(90deg,var(--accent),var(--accent-2));
   box-shadow:0 0 18px var(--accent),0 0 28px -4px rgba(var(--accent-2-rgb),.7);
   transition:width .6s ease}
-.bar i::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);
+/* Seamless shimmer: the repeating gradient translates exactly one period per
+   loop, so the wrap is invisible — no periodic "reset" of the glint. */
+.bar i::after{content:"";position:absolute;top:0;bottom:0;left:-100%;width:200%;
+  background:repeating-linear-gradient(90deg,transparent 0,rgba(255,255,255,.45) 25%,transparent 50%);
   animation:sheen 3s linear infinite}
-@keyframes sheen{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}
+@keyframes sheen{to{transform:translateX(50%)}}
 .reset{font-size:11.5px;color:var(--ink-faint);margin-top:11px}
 .reset b{color:var(--ink)}
 
