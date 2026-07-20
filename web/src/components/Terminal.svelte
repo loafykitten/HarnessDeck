@@ -41,6 +41,18 @@
     }
   }
 
+  async function copySelection() {
+    const text = term?.getSelection();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      pasteFlash = "📋 copied";
+    } catch {
+      pasteFlash = "copy failed";
+    }
+    setTimeout(() => pasteFlash = "", 2000);
+  }
+
   function doFit() {
     if (!fit || !term || ws?.readyState !== WebSocket.OPEN) return;
     fit.fit();
@@ -117,6 +129,14 @@
         if (e.type === "keydown") sendInput("\x1b[200~\n\x1b[201~");
         return false;
       }
+      // Copy the terminal selection on ⌘C / ⌃C. xterm's selection is a render
+      // overlay, not a DOM selection, so the browser's native copy grabs
+      // nothing — we do it by hand. With no selection, ⌃C falls through to
+      // tmux as SIGINT (interrupt) as usual.
+      if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && e.key === "c" && term?.hasSelection()) {
+        copySelection();
+        return false;
+      }
       return true;
     });
 
@@ -176,6 +196,7 @@
 {#if active}
   <div class="input-hint">
     <span><kbd>⌘V</kbd> paste image</span>
+    <span><kbd>⌘C</kbd> copy selection</span>
     <span><kbd>⇧⏎</kbd> newline</span>
     <span><kbd>⏎</kbd> send</span>
     <span><kbd>esc</kbd> interrupt</span>
