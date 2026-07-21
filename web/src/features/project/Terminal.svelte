@@ -112,6 +112,8 @@
       cursorBlink: true,
       allowTransparency: false,
       scrollback: 5000,
+      // App mouse tracking consumes plain drags; Option-drag must still select terminal text.
+      macOptionClickForcesSelection: true,
       theme: themeColors(),
     });
     fit = new FitAddon();
@@ -204,7 +206,7 @@
 {#if active}
   <div class="input-hint">
     <span><kbd>⌘V</kbd> paste image</span>
-    <span><kbd>⌘C</kbd> copy selection</span>
+    <span><kbd>⌥drag</kbd> select · <kbd>⌘C</kbd> copy</span>
     <span><kbd>⇧⏎</kbd> newline</span>
     <span><kbd>⏎</kbd> send</span>
     <span><kbd>esc</kbd> interrupt</span>
