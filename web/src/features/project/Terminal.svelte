@@ -142,8 +142,15 @@
       // Copy the terminal selection on ⌘C / ⌃C. xterm's selection is a render
       // overlay, not a DOM selection, so the browser's native copy grabs
       // nothing — we do it by hand. With no selection, ⌃C falls through to
-      // tmux as SIGINT (interrupt) as usual.
-      if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && e.key === "c" && term?.hasSelection()) {
+      // tmux as SIGINT (interrupt) as usual. Swallow ⌘C to avoid Safari's alert beep.
+      if (e.metaKey && !e.ctrlKey && e.key === "c") {
+        if (e.type === "keydown") {
+          e.preventDefault();
+          if (term?.hasSelection()) copySelection();
+        }
+        return false;
+      }
+      if (e.type === "keydown" && e.ctrlKey && e.key === "c" && term?.hasSelection()) {
         copySelection();
         return false;
       }
