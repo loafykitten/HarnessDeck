@@ -51,6 +51,10 @@
 .tk-row-head{flex:1;min-width:0;line-height:1.45}
 :root[data-theme="aero"] .tk-pop{background:rgba(255,255,255,.94);border-color:rgba(11,53,80,.16);
   box-shadow:0 10px 24px -10px rgba(20,90,140,.4)}
+/* project view: .main is a height-capped scroll container there, and sticky
+   inside it renders the bar displaced by its whole top inset — over the
+   header at narrow widths. The fill layout barely scrolls, so just flow. */
+.main:has(.screen.fill) .tk{position:static}
 @media (max-width:720px){
   .tk{top:74px} /* clear the rail when it becomes a fixed top bar */
   .tk-upd{display:none}
