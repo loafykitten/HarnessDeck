@@ -49,6 +49,37 @@
     try { await fileTree.refresh(); } finally { refreshing = false; }
   }
 
+  // Sidebar (tabs + files) width — draggable via the divider, persisted.
+  const SIDE_MIN = 170, SIDE_MAX = 520;
+  const clampSide = (w: number) => Math.min(SIDE_MAX, Math.max(SIDE_MIN, w));
+  let sideWidth = $state(clampSide(Number(localStorage.getItem("hd-side-width")) || 236));
+  let dragging = $state(false);
+
+  function startResize(e: PointerEvent) {
+    const startX = e.clientX, startW = sideWidth;
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+    dragging = true;
+    const move = (ev: PointerEvent) => { sideWidth = clampSide(startW + ev.clientX - startX); };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      dragging = false;
+      localStorage.setItem("hd-side-width", String(sideWidth));
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up, { once: true });
+    e.preventDefault();
+  }
+
+  function resizeKeydown(e: KeyboardEvent) {
+    const step = e.shiftKey ? 32 : 12;
+    if (e.key === "ArrowLeft") sideWidth = clampSide(sideWidth - step);
+    else if (e.key === "ArrowRight") sideWidth = clampSide(sideWidth + step);
+    else return;
+    e.preventDefault();
+    localStorage.setItem("hd-side-width", String(sideWidth));
+  }
+
   // Which harness the next session runs. Sticky across visits; Shift+Tab
   // cycles it while the name input has focus.
   const savedHarness = localStorage.getItem("hd-new-harness");
@@ -140,6 +171,7 @@
 </div>
 
 <div class="term-wrap">
+  <div class="side-col" style:width="{sideWidth}px">
   <div class="tabs" role="tablist" aria-orientation="vertical">
     {#each mySessions as s (s.id)}
       <div class="tab" class:active={s.id === activeId}
@@ -182,6 +214,30 @@
     {#if createError}<div class="tab" style="color:#ff5f57">{createError}</div>{/if}
   </div>
 
+  {#if filesCollapsed}
+    <button class="glass files-slim" title="Show files" aria-label="Show files"
+      onclick={() => setFilesCollapsed(false)}>
+      <span>‹</span><b>Files</b>
+    </button>
+  {:else}
+    <aside class="glass files-panel" aria-label="Project files">
+      <div class="files-head">
+        <button class="files-title" title="Collapse files" aria-label="Collapse files"
+          onclick={() => setFilesCollapsed(true)}><span>›</span><b>Files</b></button>
+        <button class="files-refresh" class:refreshing title="Refresh files" aria-label="Refresh files"
+          aria-busy={refreshing} disabled={refreshing} onclick={refreshFiles}><span>⟳</span></button>
+      </div>
+      <FileTree bind:this={fileTree} {project} />
+    </aside>
+  {/if}
+  </div>
+
+  <!-- ARIA window-splitter: a focusable separator is interactive by spec -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div class="side-resize" class:dragging role="separator" aria-orientation="vertical"
+    aria-label="Resize sidebar" aria-valuemin={SIDE_MIN} aria-valuemax={SIDE_MAX} aria-valuenow={sideWidth}
+    tabindex="0" onpointerdown={startResize} onkeydown={resizeKeydown}></div>
+
   <div class="term-col">
     {#if mySessions.length > 0}
       <div class="glass term">
@@ -204,23 +260,6 @@
       </div>
     {/if}
   </div>
-
-  {#if filesCollapsed}
-    <button class="glass files-slim" title="Show files" aria-label="Show files"
-      onclick={() => setFilesCollapsed(false)}>
-      <span>‹</span><b>Files</b>
-    </button>
-  {:else}
-    <aside class="glass files-panel" aria-label="Project files">
-      <div class="files-head">
-        <button class="files-title" title="Collapse files" aria-label="Collapse files"
-          onclick={() => setFilesCollapsed(true)}><span>›</span><b>Files</b></button>
-        <button class="files-refresh" class:refreshing title="Refresh files" aria-label="Refresh files"
-          aria-busy={refreshing} disabled={refreshing} onclick={refreshFiles}><span>⟳</span></button>
-      </div>
-      <FileTree bind:this={fileTree} {project} />
-    </aside>
-  {/if}
 </div>
 
 <div class="glass pet-home" aria-hidden="true">
@@ -247,8 +286,16 @@
   /* the pet's home: a full-width strip under the terminal + files row */
   .pet-home{flex:none;margin-top:14px;border-radius:15px;overflow:hidden;padding:0 10px}
   .pet-home :global(.mascot-track){margin-top:0}
-  .files-panel{width:clamp(260px,22vw,292px);flex:none;overflow:hidden;border-radius:15px;
-    display:flex;flex-direction:column;min-height:0}
+  /* left sidebar: session tabs stacked over the files panel; the divider drags its width */
+  .side-col{flex:none;min-width:0;display:flex;flex-direction:column;gap:14px}
+  .side-resize{flex:none;align-self:stretch;width:12px;margin:0 -7px;cursor:col-resize;
+    position:relative;z-index:4;border-radius:6px;touch-action:none}
+  .side-resize::before{content:"";position:absolute;left:5px;top:0;bottom:0;width:2px;border-radius:2px;
+    background:var(--glass-brd);opacity:0;transition:.18s}
+  .side-resize:hover::before,.side-resize:focus-visible::before,.side-resize.dragging::before{
+    opacity:1;background:var(--accent-2);box-shadow:0 0 10px rgba(var(--accent-2-rgb),.7)}
+  .files-panel{width:100%;flex:1;min-height:180px;overflow:hidden;border-radius:15px;
+    display:flex;flex-direction:column}
   .files-head{height:42px;display:flex;align-items:center;padding:0 9px 0 7px;
     border-bottom:1px solid var(--glass-brd);background:var(--glass)}
   .files-title{display:flex;align-items:center;gap:7px;min-width:0;flex:1;padding:7px;color:var(--ink-dim);text-align:left}
@@ -261,13 +308,15 @@
   .files-refresh.refreshing span{animation:file-refresh-spin .7s linear infinite}
   @keyframes file-refresh-spin{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion:reduce){.files-refresh.refreshing span{animation-duration:1.4s}}
-  .files-slim{width:38px;flex:none;min-height:132px;border-radius:13px;display:flex;flex-direction:column;
-    align-items:center;justify-content:flex-start;gap:9px;padding:12px 0;color:var(--ink-faint)}
+  .files-slim{width:100%;flex:none;min-height:38px;border-radius:13px;display:flex;
+    align-items:center;justify-content:center;gap:9px;padding:0;color:var(--ink-faint)}
   .files-slim:hover{color:var(--ink);border-color:var(--glass-brd-lit);box-shadow:0 0 18px -8px var(--accent)}
-  .files-slim b{font-size:10px;letter-spacing:.08em;writing-mode:vertical-rl;text-transform:uppercase}
+  .files-slim b{font-size:10px;letter-spacing:.08em;text-transform:uppercase}
   @media (max-width:720px){
-    .files-panel{width:100%}
-    .files-slim{width:100%;min-height:38px;flex-direction:row;justify-content:center;padding:0}
-    .files-slim b{writing-mode:horizontal-tb}
+    /* stacked layout: dissolve the sidebar so tabs, terminal, files flow in
+       .term-wrap's column — files drop below the terminal via order */
+    .side-col{display:contents}
+    .side-resize{display:none}
+    .files-panel,.files-slim{order:2}
   }
 </style>
