@@ -1,0 +1,130 @@
+/* ============================================================
+   CLAUDE COMMAND — app styles
+   Ported from drafts/design-final.html (the design reference).
+   ============================================================ */
+
+/* ============ THEME TOKENS ============ */
+:root{
+  --bg-a:#1a0b2e;
+  --bg-b:#0b1440;
+  --bg-c:#2a0d3d;
+  --orb-1:#ff4fd8;
+  --orb-2:#4f8bff;
+  --orb-3:#8b4fff;
+  --accent:#ff5ec7;
+  --accent-2:#5aa8ff;
+  --accent-3:#a06bff;
+  --accent-rgb:255,94,199;
+  --accent-2-rgb:90,168,255;
+  --accent-3-rgb:160,107,255;
+  --glass:rgba(255,255,255,.055);
+  --glass-2:rgba(255,255,255,.09);
+  --glass-brd:rgba(255,255,255,.14);
+  --glass-brd-lit:rgba(255,255,255,.30);
+  --ink:#f4f0ff;
+  --ink-dim:#c6bce6;
+  --ink-faint:#8f86b8;
+  --ok:#4fe3b0;
+  --ok-rgb:79,227,176;
+  --bad:#ff5f57;
+  --bad-rgb:255,95,87;
+  --shadow:rgba(120,40,200,.45);
+  --shadow-lit:rgba(255,90,200,.35);
+  --ring-track:rgba(255,255,255,.10);
+  --term-bg:#0d0921;
+  --term-bar:rgba(255,255,255,.07);
+  --phosphor:rgba(120,210,255,.30);
+  --text-glow:rgba(140,190,255,.28);
+  --text-glow-strong:rgba(165,200,255,.42);
+  color-scheme:dark;
+  --num-hi:#fff;                 /* luminous-numeral gradient start */
+  --gloss:linear-gradient(160deg,rgba(255,255,255,.10),transparent 42%);
+  --term-ink:var(--ink);         /* terminal + code-editor foreground */
+  --term-cursor-accent:#000;
+  --term-sel:rgba(160,107,255,.35);
+}
+:root[data-theme="crimson"]{
+  --bg-a:#2a081e;
+  --bg-b:#3a0616;
+  --bg-c:#1a0426;
+  --orb-1:#ff3d7f;
+  --orb-2:#ff2e2e;
+  --orb-3:#c8309a;
+  --accent:#ff5e8f;
+  --accent-2:#ff4d4d;
+  --accent-3:#ff77aa;
+  --accent-rgb:255,94,143;
+  --accent-2-rgb:255,77,77;
+  --accent-3-rgb:255,119,170;
+  --ok:#ffb14f;
+  --ok-rgb:255,177,79;
+  --shadow:rgba(200,30,80,.45);
+  --shadow-lit:rgba(255,70,90,.40);
+  --term-bg:#180410;
+  --phosphor:rgba(255,140,160,.30);
+  --text-glow:rgba(255,140,165,.28);
+  --text-glow-strong:rgba(255,165,185,.42);
+  --term-sel:rgba(255,119,170,.35);
+}
+:root[data-theme="aero"]{
+  color-scheme:light;
+  /* sky */
+  --bg-a:#6ec6f2;
+  --bg-b:#a9def8;
+  --bg-c:#eefaf3;
+  /* bubbles */
+  --orb-1:#7fd7ff;
+  --orb-2:#a8f0c8;
+  --orb-3:#ffffff;
+  /* gel accents: aqua / grass / teal */
+  --accent:#0aa2d6;   --accent-rgb:10,162,214;
+  --accent-2:#3fbf5f; --accent-2-rgb:63,191,95;
+  --accent-3:#1fc4b2; --accent-3-rgb:31,196,178;
+  /* white-gloss glass */
+  --glass:rgba(255,255,255,.42);
+  --glass-2:rgba(255,255,255,.58);
+  --glass-brd:rgba(255,255,255,.75);
+  --glass-brd-lit:rgba(255,255,255,.95);
+  /* dark ink on light sky — dim/faint stay firmly readable on white glass */
+  --ink:#0b3550;
+  --ink-dim:#1f4a66;
+  --ink-faint:#48708c;
+  --ok:#23a94e; --ok-rgb:35,169,78;
+  --bad:#d63b2f; --bad-rgb:214,59,47;
+  --shadow:rgba(20,90,140,.28);
+  --shadow-lit:rgba(20,150,200,.22);
+  --ring-track:rgba(11,53,80,.12);
+  /* deep-sea glass terminal (stays dark) */
+  --term-bg:#07293c;
+  --term-bar:rgba(255,255,255,.55);
+  --phosphor:rgba(150,230,255,.22);
+  --text-glow:rgba(255,255,255,0);
+  --text-glow-strong:rgba(255,255,255,.85);
+  --num-hi:#0a4d74;
+  --gloss:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.32) 14%,rgba(255,255,255,0) 48%);
+  --term-ink:#dff4ff;
+  --term-cursor-accent:#07293c;
+  --term-sel:rgba(90,205,255,.35);
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--ink);
+  min-height:100vh;
+  overflow-x:hidden;
+  position:relative;
+  background:var(--bg-b);
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Monaco,"Cascadia Code",monospace}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+
+/* CRT phosphor: every glyph glows faintly, like text on a tube */
+body{text-shadow:0 0 5px var(--text-glow)}
+h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
+/* gradient-clipped text draws text-shadow as a solid blob — those elements
+   glow via drop-shadow filters instead */
+.stat-big,.bar-num,.ring .val b,.brandtext b,.plan-badge b,.greet h1 .nm{text-shadow:none}
+

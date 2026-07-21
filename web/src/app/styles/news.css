@@ -1,0 +1,58 @@
+/* ============ NEWS TICKER ============ */
+/* Sticky at the top of the content column; z below the rail (60), above cards. */
+.tk{position:sticky;top:12px;z-index:7;display:flex;align-items:center;height:42px;
+  border-radius:14px;margin-bottom:20px}
+.tk-cap{display:flex;align-items:center;gap:8px;padding:0 14px;align-self:stretch;flex:none;
+  font-size:10px;font-weight:700;letter-spacing:.18em;color:var(--ink-dim);text-transform:uppercase;
+  border-right:1px solid var(--glass-brd);border-radius:13px 0 0 13px;transition:.18s}
+.tk-cap:hover{background:var(--glass-2);color:var(--ink)}
+.tk-cap .live-dot{width:7px;height:7px}
+.tk-chev{font-size:9px;transition:transform .2s}
+.tk-chev.up{transform:rotate(180deg)}
+.tk-upd{flex:none;padding:0 14px;align-self:stretch;display:flex;align-items:center;
+  font-size:10.5px;color:var(--ink-faint);border-left:1px solid var(--glass-brd);white-space:nowrap}
+.tk-view{flex:1;min-width:0;overflow:hidden;align-self:stretch;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 26px,#000 calc(100% - 26px),transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 26px,#000 calc(100% - 26px),transparent)}
+/* crawl transform is driven by rAF in NewsTicker.svelte (pixel-continuous
+   across content swaps; pauses on hover) */
+.tk-track{display:flex;align-items:center;height:100%;width:max-content;will-change:transform}
+.tk-group{display:flex;align-items:center;height:100%}
+.tk-item{display:inline-flex;align-items:center;gap:10px;padding:0 16px;height:100%;
+  color:var(--ink-dim);text-decoration:none;font-size:12.5px;white-space:nowrap;transition:color .15s}
+.tk-item:hover{color:var(--ink)}
+.tk-item:hover .tk-head{text-shadow:0 0 12px rgba(var(--accent-rgb),.55)}
+.tk-item.outage .tk-head{color:var(--ink)}
+.tk-src{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  padding:1px 6px;border-radius:999px;border:1px solid var(--glass-brd);color:var(--ink-dim);flex:none}
+.tk-src.anthropic{color:var(--accent);border-color:rgba(var(--accent-rgb),.45)}
+.tk-src.openai{color:var(--accent-2);border-color:rgba(var(--accent-2-rgb),.45)}
+.tk-src.deepseek{color:var(--accent-3);border-color:rgba(var(--accent-3-rgb),.45)}
+.tk-src.moonshot{color:var(--ok);border-color:rgba(var(--ok-rgb),.45)}
+.tk-src.zai{color:var(--ink);border-color:var(--glass-brd-lit)}
+.tk-dot{width:7px;height:7px;border-radius:50%;flex:none}
+.tk-dot.outage{background:var(--bad);box-shadow:0 0 9px var(--bad);animation:pulse 1.1s infinite}
+.tk-dot.resolved{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.tk-age{font-size:10.5px;color:var(--ink-faint);flex:none}
+.tk-sep{width:6px;height:6px;border-radius:1px;transform:rotate(45deg);flex:none;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));opacity:.45}
+
+/* history popover — anchored under the bar, dark-chrome like tooltips */
+.tk-pop{position:absolute;top:calc(100% + 10px);left:0;z-index:9;
+  width:min(560px,calc(100vw - 140px));max-height:min(54vh,480px);overflow-y:auto;
+  padding:8px;border-radius:16px;border:1px solid var(--glass-brd-lit);
+  background:rgba(18,10,36,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 18px 50px -18px #000,0 0 30px -12px rgba(var(--accent-rgb),.5);
+  animation:tkpop .18s ease-out}
+@keyframes tkpop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.tk-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;
+  color:var(--ink-dim);text-decoration:none;font-size:12.5px;transition:.15s}
+.tk-row:hover{background:var(--glass);color:var(--ink)}
+.tk-row-head{flex:1;min-width:0;line-height:1.45}
+:root[data-theme="aero"] .tk-pop{background:rgba(255,255,255,.94);border-color:rgba(11,53,80,.16);
+  box-shadow:0 10px 24px -10px rgba(20,90,140,.4)}
+@media (max-width:720px){
+  .tk{top:74px} /* clear the rail when it becomes a fixed top bar */
+  .tk-upd{display:none}
+}
+

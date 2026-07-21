@@ -1,0 +1,125 @@
+/* ============================================================
+   AERO SKEUOMORPHISM — theme-scoped overrides only.
+   :root[data-theme="aero"] .x  is (0,3,0): beats .orb.o1 etc.
+   Reference: drafts/design-aero.html
+   ============================================================ */
+
+/* sky: vertical gradient, slow vertical drift */
+:root[data-theme="aero"] .bg{
+  background:linear-gradient(180deg,var(--bg-a),var(--bg-b) 45%,var(--bg-c) 80%,#e6f6e6);
+  background-size:100% 200%;
+  animation:aerodrift 40s ease-in-out infinite;
+}
+@keyframes aerodrift{0%,100%{background-position:50% 0%}50%{background-position:50% 18%}}
+
+/* clouds: soft white ellipses on the free .orbs pseudos */
+:root[data-theme="aero"] .orbs::before,
+:root[data-theme="aero"] .orbs::after{
+  content:"";position:absolute;border-radius:50%;filter:blur(46px);
+  background:radial-gradient(ellipse at center,rgba(255,255,255,.92),rgba(255,255,255,0) 68%);
+}
+:root[data-theme="aero"] .orbs::before{width:52vw;height:16vw;top:9%;left:-6vw;
+  animation:float1 46s ease-in-out infinite}
+:root[data-theme="aero"] .orbs::after{width:44vw;height:13vw;top:30%;right:-8vw;
+  animation:float2 56s ease-in-out infinite}
+
+/* orbs become soap bubbles: transparent body, bright rim, specular dot */
+:root[data-theme="aero"] .orb{
+  mix-blend-mode:normal;filter:none;opacity:.9;
+  background:
+    radial-gradient(circle at 31% 26%,rgba(255,255,255,.98),rgba(255,255,255,0) 20%),
+    radial-gradient(circle at 66% 78%,rgba(255,255,255,.5),rgba(255,255,255,0) 26%),
+    radial-gradient(circle,rgba(255,255,255,0) 55%,rgba(var(--accent-rgb),.16) 74%,
+      rgba(255,255,255,.92) 88%,rgba(var(--accent-2-rgb),.4) 96%,rgba(255,255,255,.65));
+}
+:root[data-theme="aero"] .orb.o1{width:22vw;height:22vw;top:12%;left:8%}
+:root[data-theme="aero"] .orb.o2{width:15vw;height:15vw;top:auto;bottom:12%;right:9%}
+:root[data-theme="aero"] .orb.o3{width:9vw;height:9vw;top:56%;left:48%}
+
+/* CRT layers: scanlines off; vignette becomes sun bloom; grain softened */
+:root[data-theme="aero"] .crt{display:none}
+:root[data-theme="aero"] .crt-glow{box-shadow:none;
+  background:radial-gradient(110% 80% at 80% -12%,rgba(255,255,255,.8),transparent 55%)}
+:root[data-theme="aero"] .grain{opacity:.3}
+
+/* glass gets a wet top-light; glow keeps its rim but drops the neon halo */
+:root[data-theme="aero"] .glass{
+  box-shadow:0 18px 42px -20px var(--shadow),
+    inset 0 1px 0 var(--glass-brd-lit),
+    inset 0 14px 24px -16px rgba(255,255,255,.95);
+}
+:root[data-theme="aero"] .glow{
+  box-shadow:0 18px 42px -20px var(--shadow),
+    0 0 34px -14px rgba(var(--accent-rgb),.35),
+    inset 0 1px 0 var(--glass-brd-lit);
+}
+:root[data-theme="aero"] .glow::after{opacity:1}
+/* rim becomes a soft water shimmer: white-biased, no neon halo; conic from
+   --bf so the borderflow rotation still animates it */
+:root[data-theme="aero"] .glow::before{
+  filter:none;
+  background:conic-gradient(from var(--bf),
+    rgba(var(--accent-rgb),.5),
+    rgba(255,255,255,.9) 34%,
+    rgba(var(--accent-2-rgb),.45) 60%,
+    rgba(255,255,255,.85) 80%,
+    rgba(var(--accent-rgb),.5));
+}
+/* light theme gets a light ring well, not the dark neon socket */
+:root[data-theme="aero"] .ring::before{
+  background:radial-gradient(circle,rgba(255,255,255,.5) 42%,transparent 70%);
+}
+
+/* frosted white rail */
+:root[data-theme="aero"] .rail{
+  background:linear-gradient(180deg,rgba(255,255,255,.66),rgba(255,255,255,.44));
+}
+/* gel treatment: white top-light + shaded belly = jelly button */
+:root[data-theme="aero"] .rail-item.active,
+:root[data-theme="aero"] .logo,
+:root[data-theme="aero"] .sess-ico,
+:root[data-theme="aero"] .btn:not(.ghost){
+  box-shadow:0 6px 16px -6px rgba(var(--accent-rgb),.55),
+    inset 0 1px 0 rgba(255,255,255,.85),
+    inset 0 7px 10px -6px rgba(255,255,255,.65),
+    inset 0 -7px 10px -6px rgba(0,0,0,.22);
+}
+:root[data-theme="aero"] .bar i{
+  box-shadow:0 1px 6px rgba(var(--accent-rgb),.5),
+    inset 0 1px 0 rgba(255,255,255,.75),
+    inset 0 -3px 5px -3px rgba(0,0,0,.3);
+}
+:root[data-theme="aero"] .pcard::before{
+  background:linear-gradient(180deg,rgba(255,255,255,.85),rgba(255,255,255,.2) 18%,transparent 50%);
+}
+/* dark chrome bits -> white glass */
+:root[data-theme="aero"] .rail-item[data-tip]::after,
+:root[data-theme="aero"] .burn-tip{
+  background:rgba(255,255,255,.94);border-color:rgba(11,53,80,.16);
+  box-shadow:0 10px 24px -10px rgba(20,90,140,.4);
+}
+:root[data-theme="aero"] .hotkey-bar{background:rgba(255,255,255,.6)}
+:root[data-theme="aero"] .burn{border-bottom-color:rgba(11,53,80,.18)}
+
+/* terminal: deep-sea glass — no scanlines/phosphor, glassy top reflection */
+:root[data-theme="aero"] .term-scan{display:none}
+:root[data-theme="aero"] .term-tube{
+  background:linear-gradient(180deg,rgba(255,255,255,.10),transparent 16%)}
+:root[data-theme="aero"] .term-view .xterm .xterm-rows{text-shadow:none}
+:root[data-theme="aero"] .skill-editor{text-shadow:none}
+
+/* accent-colored text: the gel hues are gorgeous as chrome but too pale to
+   read on the light sky — swap in deepened versions for anything textual */
+:root[data-theme="aero"] .greet .weather .wx,
+:root[data-theme="aero"] .stat-sub b,
+:root[data-theme="aero"] .sess-tag,
+:root[data-theme="aero"] .tab.new{color:#177a41;text-shadow:none}
+:root[data-theme="aero"] .greet .whim,
+:root[data-theme="aero"] .ring-info .meta em{color:#0c7d70;text-shadow:none}
+:root[data-theme="aero"] .sess-status.waiting{color:#07749e}
+
+@media (prefers-reduced-motion:reduce){
+  :root[data-theme="aero"] .orbs::before,
+  :root[data-theme="aero"] .orbs::after{animation:none !important}
+}
+

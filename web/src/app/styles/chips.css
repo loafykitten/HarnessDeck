@@ -1,0 +1,8 @@
+/* ---- harness chips (session tabs, skill cards, skill drill-in) ---- */
+.hx{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  padding:1px 6px;border-radius:999px;border:1px solid var(--glass-brd);color:var(--ink-dim)}
+.hx.claude{color:var(--accent);border-color:rgba(var(--accent-rgb),.45)}
+.hx.codex{color:var(--accent-3);border-color:rgba(var(--accent-3-rgb),.45)}
+.hx-row{display:inline-flex;gap:4px;margin-left:auto;flex:none}
+.hx-pill{display:inline-flex;gap:5px;align-items:center}
+.hx-note{font-size:9.5px;letter-spacing:.05em;color:var(--ink-faint)}

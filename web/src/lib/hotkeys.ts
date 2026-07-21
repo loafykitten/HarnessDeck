@@ -1,5 +1,5 @@
-import { app, navigate, gotoProjects, projectSessions } from "./state.svelte";
-import { triggerSlopmaxx } from "./mascot";
+import { app, navigate, gotoProjects, projectSessions } from "../stores/state.svelte";
+import { triggerSlopmaxx } from "../components/pets/mascot";
 
 // ⌃1 dashboard · ⌃2 projects (last active; press again to cycle, ⌃⇧2 backward)
 // ⌃3 skills · ⌃4 config · ⌃⇧[ / ⌃⇧] prev/next session tab · ⌃⇧S slopmaxx the mascot.

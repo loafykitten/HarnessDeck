@@ -1,0 +1,42 @@
+/* ============ RESPONSIVE ============ */
+@media (max-width:980px){
+  .lower-grid{grid-template-columns:1fr}
+  .proj-grid{grid-template-columns:repeat(2,1fr)}
+  .cfg-grid{grid-template-columns:1fr}
+}
+@media (max-width:720px){
+  .rail{width:auto;left:0;right:0;bottom:auto;flex-direction:row;align-items:center;gap:4px;
+    padding:10px 12px;border-right:0;border-bottom:1px solid var(--glass-brd)}
+  .rail.expanded{width:auto;box-shadow:none}
+  .rail-top{margin-bottom:0;min-height:0}
+  .brandtext{opacity:1;width:auto;transform:none}
+  .rail-nav{flex-direction:row;margin-left:6px;overflow-x:auto;margin-top:0}
+  .rail-spacer{flex:0}
+  .rail-item{height:44px;padding:0 12px}
+  .rail-item .lbl{display:none}
+  .rail-item[data-tip]::after{top:calc(100% + 10px);left:50%;transform:translateX(-50%) scale(.96)}
+  .rail-item[data-tip]:hover::after{transform:translateX(-50%) scale(1)}
+  .rail-bottom{flex-direction:row;margin-left:auto}
+  .main,.rail.expanded~.main{margin-left:0;padding-top:80px}
+  /* session tabs: back to a wrapping row above the terminal */
+  .term-wrap{flex-direction:column}
+  .tabs{flex-direction:row;flex-wrap:wrap;width:auto}
+  .term-col{width:100%}
+  .tab{min-width:0}
+  .tab-meta,.tab-time{display:none}
+  .tab.active{padding-left:12px} /* no left nub here — indicator is the bottom bar */
+  .tab.active::after{left:9px;right:9px;top:auto;bottom:-1px;width:auto;height:3px;border-radius:3px;
+    background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+  .tab .tab-x{opacity:1}
+  .tab input{width:130px}
+}
+@media (max-width:640px){
+  .proj-grid{grid-template-columns:1fr}
+  .ring-card{flex-direction:row}
+  .head-side{align-items:flex-start;width:100%}
+  .pv-metas{width:100%;margin-left:0}
+}
+@media (max-width:430px){
+  .brandtext{display:none}
+}
+

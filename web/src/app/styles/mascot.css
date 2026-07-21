@@ -1,0 +1,89 @@
+/* ============ MASCOT ============ */
+.mascot-track{position:relative;height:98px;margin-top:14px;overflow:hidden}
+.mascot-roller{
+  position:absolute;bottom:4px;left:6px;width:54px;height:54px;
+  animation:mascot-roll 36s linear infinite;
+}
+.mascot-wheel{
+  width:54px;height:54px;color:var(--ink-dim);opacity:.75;
+  filter:drop-shadow(0 0 6px rgba(var(--accent-rgb),.35));
+  animation:mascot-spin 36s linear infinite;
+}
+/* roll + spin share one linear timeline, symmetric about 50%, so the wheel's
+   rotation reverses exactly when its travel does. `left` (not translateX)
+   because the travel distance depends on the track's width, and translateX
+   percentages resolve against the roller itself. */
+@keyframes mascot-roll{
+  0%{left:6px}
+  50%{left:calc(100% - 60px)}
+  100%{left:6px}
+}
+@keyframes mascot-spin{
+  0%{transform:rotate(0)}
+  50%{transform:rotate(1080deg)}
+  100%{transform:rotate(0)}
+}
+/* glyph pets (cybercat, foxtrix): three centered monospace lines. They glide
+   rather than roll, so a gentle float bob keeps them alive between idles. */
+.mascot-glyph{
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+  height:54px;white-space:pre;user-select:none;
+  font:600 12.5px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;
+  color:var(--pet-ink,var(--ink-dim));opacity:.85;
+  filter:drop-shadow(0 0 6px var(--pet-glow,rgba(var(--accent-rgb),.35)));
+  animation:pet-float 3.4s ease-in-out infinite;
+}
+@keyframes pet-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+/* idle animations: one-shot tricks the pet performs at random intervals
+   (Mascot.svelte drives the timing and matches these durations). They live on
+   .mascot-hopper so they compose with the roller's travel and the wheel's
+   spin. Biblical Claude gets bounce + spin; the glyph pets peer at you,
+   groom, or wag — usually with a face swap to sell it. */
+.mascot-hopper.idle-bounce{animation:pet-bounce 1.3s linear}
+@keyframes pet-bounce{
+  0%,45%{transform:translateY(0)}
+  55%{transform:translateY(-14px)}
+  65%{transform:translateY(0)}
+  73%{transform:translateY(-7px)}
+  81%,100%{transform:translateY(0)}
+}
+.mascot-hopper.idle-spin{animation:pet-spin .9s ease-in-out}
+@keyframes pet-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+.mascot-hopper.idle-peer{animation:pet-peer 1.8s ease-in-out}
+@keyframes pet-peer{
+  0%,100%{transform:scale(1) translateY(0)}
+  25%,75%{transform:scale(1.16) translateY(-2px)}
+}
+.mascot-hopper.idle-groom{animation:pet-groom 1.9s ease-in-out}
+@keyframes pet-groom{
+  0%,100%{transform:rotate(0)}
+  20%{transform:rotate(-10deg) translateY(1px)}
+  35%{transform:rotate(-13deg) translateY(2px)}
+  50%{transform:rotate(-9deg) translateY(1px)}
+  65%{transform:rotate(-13deg) translateY(2px)}
+  80%{transform:rotate(-10deg) translateY(1px)}
+}
+.mascot-hopper.idle-wag{animation:pet-wag 1.4s ease-in-out}
+@keyframes pet-wag{
+  0%,100%{transform:rotate(0)}
+  15%,55%{transform:rotate(7deg)}
+  35%,75%{transform:rotate(-7deg)}
+}
+.mascot-bubble{
+  position:absolute;bottom:60px;left:32px;white-space:nowrap;
+  padding:5px 10px;border-radius:10px;font-size:12px;color:var(--ink);
+  background:var(--glass-2);border:1px solid var(--glass-brd);
+  backdrop-filter:blur(8px);
+  box-shadow:0 0 18px -8px rgba(var(--accent-rgb),.5);
+  animation:mascot-pop .18s ease-out;
+}
+.mascot-bubble::after{
+  content:"";position:absolute;bottom:-4px;left:10px;width:8px;height:8px;
+  background:inherit;border:inherit;border-top:none;border-left:none;
+  transform:rotate(45deg);
+}
+/* near the right edge the bubble would run off-screen — hang it to his left */
+.mascot-bubble.flip{left:auto;right:32px}
+.mascot-bubble.flip::after{left:auto;right:10px}
+@keyframes mascot-pop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+

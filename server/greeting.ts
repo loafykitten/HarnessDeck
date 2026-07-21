@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { getAppConfig } from "./config";
-import { listSessions } from "./sessions";
+import { getAppConfig } from "./config/config";
+import { listSessions } from "./terminal/sessions";
 
 const CLAUDE_BIN = join(homedir(), ".local", "bin", "claude");
 
@@ -107,7 +107,7 @@ export async function getGreeting(): Promise<Greeting> {
   const cfg = await getAppConfig();
   // fall back to the account's display name until one is configured
   const name = cfg.displayName
-    || (await import("./usage").then(u => u.getProfile()).catch(() => null))?.displayName
+    || (await import("./usage/claude").then(u => u.getProfile()).catch(() => null))?.displayName
     || "";
   const weather = await getWeather(cfg.zip);
   const whimsy = cfg.greetingEnabled
