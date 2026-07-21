@@ -28,7 +28,7 @@
       <section class="screen"><Dashboard /></section>
     {:else if app.route.view === "project"}
       {#key app.route.name}
-        <section class="screen"><ProjectView project={app.route.name} /></section>
+        <section class="screen fill"><ProjectView project={app.route.name} /></section>
       {/key}
     {:else if app.route.view === "config"}
       <section class="screen"><ConfigView /></section>

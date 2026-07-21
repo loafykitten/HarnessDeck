@@ -20,6 +20,11 @@
   .main,.rail.expanded~.main{margin-left:0;padding-top:80px}
   /* session tabs: back to a wrapping row above the terminal */
   .term-wrap{flex-direction:column}
+  /* stacked column: the fill layout is content-sized again so tabs, terminal
+     and files stack at their natural heights (and .pet-home below isn't
+     overlapped); the terminal gets a fixed height and .main scrolls */
+  .screen.fill .term-wrap{flex:none;min-height:auto}
+  .screen.fill .term-view{flex:none;height:min(62vh,640px);min-height:0}
   .tabs{flex-direction:row;flex-wrap:wrap;width:auto}
   .term-col{width:100%}
   .tab{min-width:0}

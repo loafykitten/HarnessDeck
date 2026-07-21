@@ -203,10 +203,6 @@
         </div>
       </div>
     {/if}
-
-    {#if mySessions.length > 0}
-      <Mascot />
-    {/if}
   </div>
 
   {#if filesCollapsed}
@@ -227,6 +223,10 @@
   {/if}
 </div>
 
+<div class="glass pet-home" aria-hidden="true">
+  <Mascot />
+</div>
+
 <style>
   /* harness picker inside the new-session tab (.hx chips are global) */
   .tab.naming{flex-direction:column;align-items:stretch;gap:7px}
@@ -244,7 +244,11 @@
     .pv-side .pv-metas{width:100%;justify-content:flex-start}
   }
   .stack-pill{color:var(--accent-2);border-color:var(--accent-2);background:var(--glass-2)}
-  .files-panel{width:clamp(260px,22vw,292px);flex:none;overflow:hidden;border-radius:15px}
+  /* the pet's home: a full-width strip under the terminal + files row */
+  .pet-home{flex:none;margin-top:14px;border-radius:15px;overflow:hidden;padding:0 10px}
+  .pet-home :global(.mascot-track){margin-top:0}
+  .files-panel{width:clamp(260px,22vw,292px);flex:none;overflow:hidden;border-radius:15px;
+    display:flex;flex-direction:column;min-height:0}
   .files-head{height:42px;display:flex;align-items:center;padding:0 9px 0 7px;
     border-bottom:1px solid var(--glass-brd);background:var(--glass)}
   .files-title{display:flex;align-items:center;gap:7px;min-width:0;flex:1;padding:7px;color:var(--ink-dim);text-align:left}

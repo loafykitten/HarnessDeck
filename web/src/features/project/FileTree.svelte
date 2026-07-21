@@ -126,7 +126,10 @@
   .ft-legend .tracked{background:var(--ok)}
   .ft-legend .untracked{background:var(--accent-2)}
   .ft-legend .ignored{background:var(--ink-faint)}
-  .ft-scroll{max-height:min(64vh,670px);overflow:auto;padding:7px 5px 9px;scrollbar-width:thin}
+  /* fills the files panel (a flex column) down to the panel's bottom edge */
+  .ft-scroll{flex:1;min-height:0;overflow:auto;padding:7px 5px 9px;scrollbar-width:thin}
+  /* stacked layout: the panel is content-sized again, so cap the tree */
+  @media (max-width:720px){.ft-scroll{max-height:min(64vh,670px)}}
   .ft-state{padding:28px 12px;text-align:center;font-size:11.5px;color:var(--ink-faint)}
   .ft-state.error{color:var(--bad)}
   .ft-note{padding:7px 11px;border-top:1px solid var(--glass-brd);font-size:9.5px;color:var(--ink-faint)}
