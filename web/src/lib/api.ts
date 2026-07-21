@@ -1,3 +1,5 @@
+import type { PetId } from "./pets";
+
 export type SessionStatus = "working" | "waiting" | "idle";
 export type HarnessId = "claude" | "codex";
 export type CodexMode = "api" | "oauth";
@@ -67,7 +69,7 @@ export interface UpdateStatus {
   error: string | null; job: UpdateJob | null;
 }
 export type Updates = Record<HarnessId, UpdateStatus>;
-export interface AppConfig { displayName: string; zip: string; greetingEnabled: boolean; renewalDay: number | null }
+export interface AppConfig { displayName: string; zip: string; greetingEnabled: boolean; renewalDay: number | null; pet: PetId }
 export interface SkillSummary { name: string; description: string; files: number; updated: number; harnesses: HarnessId[] }
 export interface SkillDetail {
   name: string;

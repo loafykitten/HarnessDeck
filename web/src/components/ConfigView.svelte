@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, type AppConfig, type CodexMode, type HarnessId } from "../lib/api";
-  import { app, refreshGreeting, refreshUsage } from "../lib/state.svelte";
+  import { PETS, type PetId } from "../lib/pets";
+  import { app, applyPet, refreshGreeting, refreshUsage } from "../lib/state.svelte";
   import JsonNode from "./JsonNode.svelte";
 
-  let cfg = $state<AppConfig>({ displayName: "", zip: "", greetingEnabled: true, renewalDay: null });
+  let cfg = $state<AppConfig>({ displayName: "", zip: "", greetingEnabled: true, renewalDay: null, pet: "biblical" });
   let settingsText = $state("");
   let settingsObj = $state<unknown>(null);
   let settingsMode = $state<"form" | "raw">("form");
@@ -94,6 +95,16 @@
     } catch (e) { flash("md", false, String(e)); }
   }
 
+  /** Pet choice applies immediately (favicon, rail logo, mascot) and
+      persists on its own — no Save button to remember. */
+  async function pickPet(id: PetId) {
+    if (cfg.pet === id) return;
+    cfg.pet = id;
+    applyPet(id);
+    try { cfg = await api.saveAppConfig(cfg); flash("pet", true, "saved"); }
+    catch (e) { flash("pet", false, String(e)); }
+  }
+
   /** The Codex "options" the form mode renders: API key vs ChatGPT OAuth,
       applied by (un)commenting model_provider in config.toml. */
   async function setCodexMode(mode: CodexMode) {
@@ -151,6 +162,31 @@
   </div>
 
   <div class="glass glow cfg-card">
+    <h3>Pet</h3>
+    <div class="pet-pick">
+      {#each Object.values(PETS) as p (p.id)}
+        <button class="pet-opt" class:on={cfg.pet === p.id} onclick={() => pickPet(p.id)}>
+          <span class="pet-preview" style={p.ink ? `color:${p.ink}` : ""}>
+            {#if p.lines}
+              {#each p.lines as line}<span>{line}</span>{/each}
+            {:else}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+                <circle cx="12" cy="12" r="8.6"/>
+                <ellipse cx="12" cy="12" rx="8.6" ry="3.4"/>
+                <ellipse cx="12" cy="12" rx="3.4" ry="8.6"/>
+                <circle cx="12" cy="12" r="0.7" fill="currentColor" stroke="none"/>
+              </svg>
+            {/if}
+          </span>
+          <span class="pet-name">{p.label}</span>
+        </button>
+      {/each}
+    </div>
+    <span class="pet-hint">picks the site icon, favicon, and the little traveler under the terminal</span>
+    {#if status.pet}<span class="cfg-status" class:ok={status.pet.ok} class:bad={!status.pet.ok}>{status.pet.msg}</span>{/if}
+  </div>
+
+  <div class="glass glow cfg-card">
     <div class="cfg-head">
       <h3>{meta.settingsLabel}</h3>
       {#if isJson}
@@ -192,6 +228,27 @@
 </div>
 
 <style>
+  .pet-pick{display:flex;gap:8px;margin-top:10px}
+  .pet-opt{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;
+    padding:12px 6px 9px;cursor:pointer;border-radius:12px;
+    border:1px solid var(--glass-brd);background:transparent;color:var(--ink-dim);
+    font:inherit;transition:border-color .15s,box-shadow .15s;
+  }
+  .pet-opt:hover{border-color:var(--glass-brd-lit)}
+  .pet-opt.on{
+    border-color:rgba(var(--accent-rgb),.55);
+    box-shadow:0 0 16px -6px rgba(var(--accent-rgb),.6);
+    color:var(--ink);
+  }
+  .pet-preview{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    height:44px;white-space:pre;
+    font:600 10.5px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  .pet-preview svg{width:36px;height:36px}
+  .pet-name{font-size:11px;font-weight:600;letter-spacing:.03em}
+  .pet-hint{display:block;font-size:10.5px;color:var(--ink-faint);margin-top:8px}
   .cx-auth{margin-top:10px}
   .cx-auth .je-modes.busy{opacity:.55;pointer-events:none}
   .cx-auth-hint{display:block;font-size:10.5px;color:var(--ink-faint);margin-top:5px}

@@ -14,6 +14,8 @@ export interface AppConfig {
   renewalDay: number | null; // day-of-month the subscription renews (from
                              // claude.ai billing — the API only exposes the
                              // original subscription date, which goes stale)
+  pet: "biblical" | "cybercat" | "foxtrix"; // site icon + favicon + the
+                                            // traveler under the terminal
 }
 
 const DEFAULT_APP_CONFIG: AppConfig = {
@@ -21,6 +23,7 @@ const DEFAULT_APP_CONFIG: AppConfig = {
   zip: "",
   greetingEnabled: true,
   renewalDay: null,
+  pet: "biblical",
 };
 
 export async function getAppConfig(): Promise<AppConfig> {

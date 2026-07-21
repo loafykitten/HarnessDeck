@@ -1,4 +1,5 @@
 import { api, type Greeting, type HarnessId, type HarnessMeta, type News, type ProjectInfo, type SessionInfo, type Updates, type Usage } from "./api";
+import { petOrDefault, type PetId } from "./pets";
 import { chime } from "./sound";
 
 /** Fallback until GET /api/harnesses answers, so pickers render immediately. */
@@ -21,7 +22,16 @@ export const app = $state({
   jobDisplayUntil: { claude: null, codex: null } as Record<HarnessId, number | null>,
   railExpanded: false,
   lastProject: localStorage.getItem("cc-last-project"),
+  pet: "biblical" as PetId,
 });
+
+/** Switch the active pet everywhere it shows: rail logo + mascot react to
+    app.pet; the favicon link is swapped here by hand. */
+export function applyPet(id: string | null | undefined) {
+  const pet = petOrDefault(id);
+  app.pet = pet.id;
+  document.querySelector('link[rel="icon"]')?.setAttribute("href", pet.favicon);
+}
 
 export type Route =
   | { view: "dash" }
@@ -235,6 +245,7 @@ export async function applyUpdate(h: HarnessId) {
 export function startPolling() {
   rememberProject(app.route);
   api.harnesses().then(h => { if (h.length) app.harnesses = h; }).catch(console.error);
+  api.appConfig().then(c => applyPet(c.pet)).catch(console.error);
   refreshCore(); refreshUsage(); refreshGreeting(); refreshUpdate(); refreshNews();
   setInterval(refreshCore, 5_000);
   setInterval(refreshUsage, 30_000); // server caches at 60s; 30s halves worst-case lag
