@@ -19,10 +19,12 @@ export function harnessParam(url: URL): HarnessId | null {
 export async function serveStatic(pathname: string): Promise<Response> {
   const path = pathname === "/" ? "/index.html" : pathname;
   const file = Bun.file(join(DIST, path));
-  if (await file.exists()) return new Response(file);
+  // Safari heuristic-caches responses without Cache-Control; hashed assets are immutable, everything else revalidates.
+  const cacheControl = path.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache";
+  if (await file.exists()) return new Response(file, { headers: { "cache-control": cacheControl } });
   // SPA fallback
   const index = Bun.file(join(DIST, "index.html"));
-  if (await index.exists()) return new Response(index);
+  if (await index.exists()) return new Response(index, { headers: { "cache-control": "no-cache" } });
   return new Response("web/dist not built — run: bun run build", { status: 503 });
 }
 
