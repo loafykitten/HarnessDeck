@@ -44,12 +44,30 @@
   async function copySelection() {
     const text = term?.getSelection();
     if (!text) return;
+
+    let copyEventFired = false;
+    const onCopy = (e: ClipboardEvent) => {
+      copyEventFired = true;
+      e.clipboardData?.setData("text/plain", text);
+      e.preventDefault();
+    };
+
+    // Safari doesn't count a keydown shortcut as activation for the async clipboard API.
+    document.addEventListener("copy", onCopy, { once: true });
+    let copied = false;
     try {
-      await navigator.clipboard.writeText(text);
-      pasteFlash = "📋 copied";
-    } catch {
-      pasteFlash = "copy failed";
+      copied = document.execCommand("copy") && copyEventFired;
+    } catch {} finally {
+      document.removeEventListener("copy", onCopy);
     }
+
+    if (!copied) {
+      try {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      } catch {}
+    }
+    pasteFlash = copied ? "📋 copied" : "copy failed";
     setTimeout(() => pasteFlash = "", 2000);
   }
 
