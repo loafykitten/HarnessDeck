@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Terminal } from "@xterm/xterm";
+  import { ClipboardAddon, type IClipboardProvider } from "@xterm/addon-clipboard";
   import { FitAddon } from "@xterm/addon-fit";
   import { api } from "../../lib/api";
 
@@ -19,6 +20,7 @@
   let disposed = false;
   let retryDelay = 1000;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
+  let osc52Pending: string | null = null;
 
   function themeColors() {
     const css = getComputedStyle(document.documentElement);
@@ -41,10 +43,7 @@
     }
   }
 
-  async function copySelection() {
-    const text = term?.getSelection();
-    if (!text) return;
-
+  async function copyText(text: string): Promise<boolean> {
     let copyEventFired = false;
     const onCopy = (e: ClipboardEvent) => {
       copyEventFired = true;
@@ -67,9 +66,35 @@
         copied = true;
       } catch {}
     }
+    return copied;
+  }
+
+  async function copySelection() {
+    const text = term?.getSelection();
+    if (!text) return;
+
+    const copied = await copyText(text);
     pasteFlash = copied ? "📋 copied" : "copy failed";
     setTimeout(() => pasteFlash = "", 2000);
   }
+
+  const clipboardProvider: IClipboardProvider = {
+    // Never expose the user's clipboard to apps running in the terminal.
+    readText: (_selection) => Promise.resolve(""),
+    async writeText(_selection, text) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        // WebKit rejects writes outside a gesture stack, so let the next ⌘C finish it.
+        // Expire the stash with its hint — a minutes-old ⌘C must not paste stale text.
+        osc52Pending = text;
+        pasteFlash = "📋 ⌘C to finish copy";
+        setTimeout(() => {
+          if (osc52Pending === text) { osc52Pending = null; pasteFlash = ""; }
+        }, 15_000);
+      }
+    },
+  };
 
   function doFit() {
     if (!fit || !term || ws?.readyState !== WebSocket.OPEN) return;
@@ -134,6 +159,7 @@
       macOptionClickForcesSelection: true,
       theme: themeColors(),
     });
+    term.loadAddon(new ClipboardAddon(undefined, clipboardProvider));
     fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
@@ -164,7 +190,18 @@
       if (e.metaKey && !e.ctrlKey && e.key === "c") {
         if (e.type === "keydown") {
           e.preventDefault();
-          if (term?.hasSelection()) copySelection();
+          if (term?.hasSelection()) {
+            osc52Pending = null;
+            copySelection();
+          } else if (osc52Pending !== null) {
+            const text = osc52Pending;
+            const copied = copyText(text);
+            osc52Pending = null;
+            void copied.then(success => {
+              pasteFlash = success ? "📋 copied" : "copy failed";
+              setTimeout(() => pasteFlash = "", 2000);
+            });
+          }
         }
         return false;
       }

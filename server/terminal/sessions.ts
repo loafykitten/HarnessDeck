@@ -29,6 +29,17 @@ export async function tmux(...args: string[]): Promise<{ ok: boolean; out: strin
   return { ok: code === 0, out, err };
 }
 
+let clipboardConfigured = false;
+async function ensureClipboard(): Promise<void> {
+  if (clipboardConfigured) return;
+  const clipboard = await tmux("set-option", "-s", "set-clipboard", "on");
+  if (!clipboard.ok) return; // no tmux server yet
+  const features = await tmux(
+    "set-option", "-as", "terminal-features", "xterm-256color:clipboard",
+  );
+  if (features.ok) clipboardConfigured = true;
+}
+
 function sanitize(s: string): string {
   // tmux session names cannot contain ':' or '.'; keep it shell-friendly too
   return s.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
@@ -112,6 +123,7 @@ export async function createSession(project: string, name: string, harness: Harn
     "zsh", "-lic", `exec ${HARNESSES[harness].bin}`,
   );
   if (!res.ok) return { error: res.err.trim() || "tmux new-session failed" };
+  await ensureClipboard();
   // no '=' prefix: set-option's -t is a pane-style target that rejects it
   await tmux("set-option", "-t", `${id}:`, "status", "off");
   return { id };
