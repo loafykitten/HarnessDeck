@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { app, navigate, projectSessions, refreshCore } from "../lib/state.svelte";
   import { api, fmtAgo, type HarnessId } from "../lib/api";
+  import FileTree from "./FileTree.svelte";
   import Terminal from "./Terminal.svelte";
   import Mascot from "./Mascot.svelte";
 
@@ -25,6 +27,25 @@
   let newName = $state("");
   let creating = $state(false);
   let createError = $state("");
+  let stack = $state<string[]>([]);
+  let filesCollapsed = $state(localStorage.getItem("hd-files-collapsed") === "1");
+  let fileTree = $state<{ refresh: () => Promise<void> } | null>(null);
+  let refreshing = $state(false);
+
+  onMount(async () => {
+    try { stack = (await api.projectStack(project)).stack; } catch { /* header works without stack metadata */ }
+  });
+
+  function setFilesCollapsed(value: boolean) {
+    filesCollapsed = value;
+    localStorage.setItem("hd-files-collapsed", value ? "1" : "0");
+  }
+
+  async function refreshFiles() {
+    if (!fileTree || refreshing) return;
+    refreshing = true;
+    try { await fileTree.refresh(); } finally { refreshing = false; }
+  }
 
   // Which harness the next session runs. Sticky across visits; Shift+Tab
   // cycles it while the name input has focus.
@@ -84,6 +105,7 @@
     <b>{project}</b>
     <span class="pv-path mono">{projInfo?.dir?.replace(/^\/Users\/[^/]+/, "~") ?? ""}</span>
   </div>
+  <div class="pv-side">
   <div class="pv-metas">
     {#if mySessions.length > 0}
       <span class="pill"><span class="live-dot"></span> {mySessions.length} session{mySessions.length === 1 ? "" : "s"} running</span>
@@ -104,6 +126,14 @@
     {#if projInfo?.git?.worktrees.length}
       <span class="pill" title={projInfo.git.worktrees.map(w => w.branch).join(", ")}>{projInfo.git.worktrees.length} worktree{projInfo.git.worktrees.length === 1 ? "" : "s"}</span>
     {/if}
+  </div>
+  {#if stack.length > 0}
+    <div class="pv-metas pv-stack">
+      {#each stack as technology (technology)}
+        <span class="pill stack-pill">{technology}</span>
+      {/each}
+    </div>
+  {/if}
   </div>
 </div>
 
@@ -176,6 +206,23 @@
       <Mascot />
     {/if}
   </div>
+
+  {#if filesCollapsed}
+    <button class="glass files-slim" title="Show files" aria-label="Show files"
+      onclick={() => setFilesCollapsed(false)}>
+      <span>‹</span><b>Files</b>
+    </button>
+  {:else}
+    <aside class="glass files-panel" aria-label="Project files">
+      <div class="files-head">
+        <button class="files-title" title="Collapse files" aria-label="Collapse files"
+          onclick={() => setFilesCollapsed(true)}><span>›</span><b>Files</b></button>
+        <button class="files-refresh" class:refreshing title="Refresh files" aria-label="Refresh files"
+          aria-busy={refreshing} disabled={refreshing} onclick={refreshFiles}><span>⟳</span></button>
+      </div>
+      <FileTree bind:this={fileTree} {project} />
+    </aside>
+  {/if}
 </div>
 
 <style>
@@ -188,4 +235,33 @@
   .hopt:hover{color:var(--ink-dim)}
   .hopt.on{color:var(--ink);background:var(--glass-brd);border-color:var(--glass-brd-lit)}
   .tab.naming .hint{font-size:9.5px;color:var(--ink-faint);text-align:center;letter-spacing:.04em}
+  .pv-side{margin-left:auto;display:flex;flex-direction:column;gap:7px;align-items:flex-end}
+  .pv-side .pv-metas{margin-left:0;justify-content:flex-end}
+  @media (max-width:720px){
+    .pv-side{width:100%;align-items:flex-start}
+    .pv-side .pv-metas{width:100%;justify-content:flex-start}
+  }
+  .stack-pill{color:var(--accent-2);border-color:var(--accent-2);background:var(--glass-2)}
+  .files-panel{width:clamp(260px,22vw,292px);flex:none;overflow:hidden;border-radius:15px}
+  .files-head{height:42px;display:flex;align-items:center;padding:0 9px 0 7px;
+    border-bottom:1px solid var(--glass-brd);background:var(--glass)}
+  .files-title{display:flex;align-items:center;gap:7px;min-width:0;flex:1;padding:7px;color:var(--ink-dim);text-align:left}
+  .files-title:hover{color:var(--ink)}
+  .files-title span{width:9px;color:var(--ink-faint)}
+  .files-title b{font-size:12px;letter-spacing:.04em}
+  .files-refresh{width:28px;height:28px;border-radius:8px;color:var(--ink-faint);font-size:16px}
+  .files-refresh:hover{color:var(--accent-2);background:var(--glass-2)}
+  .files-refresh span{display:block}
+  .files-refresh.refreshing span{animation:file-refresh-spin .7s linear infinite}
+  @keyframes file-refresh-spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.files-refresh.refreshing span{animation-duration:1.4s}}
+  .files-slim{width:38px;flex:none;min-height:132px;border-radius:13px;display:flex;flex-direction:column;
+    align-items:center;justify-content:flex-start;gap:9px;padding:12px 0;color:var(--ink-faint)}
+  .files-slim:hover{color:var(--ink);border-color:var(--glass-brd-lit);box-shadow:0 0 18px -8px var(--accent)}
+  .files-slim b{font-size:10px;letter-spacing:.08em;writing-mode:vertical-rl;text-transform:uppercase}
+  @media (max-width:720px){
+    .files-panel{width:100%}
+    .files-slim{width:100%;min-height:38px;flex-direction:row;justify-content:center;padding:0}
+    .files-slim b{writing-mode:horizontal-tb}
+  }
 </style>

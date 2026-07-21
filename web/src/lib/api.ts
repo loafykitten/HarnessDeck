@@ -21,6 +21,13 @@ export interface ProjectInfo {
     worktrees: { branch: string; path: string }[];
   } | null;
 }
+export type TreeGitStatus = "tracked" | "untracked" | "ignored" | "none";
+export interface TreeNode {
+  name: string; path: string; kind: "dir" | "file"; hidden: boolean;
+  ext?: string; git: TreeGitStatus; children?: TreeNode[];
+}
+export interface ProjectTree { root: TreeNode; truncated: boolean; git: boolean }
+export interface ProjectStack { stack: string[] }
 export interface MonthUsage {
   month: string; since: string | null; totalTokens: number; costUSD: number;
   days: { date: string; tokens: number; costUSD: number }[];
@@ -91,6 +98,10 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   projects: () => j<ProjectInfo[]>("/api/projects"),
+  projectTree: (name: string, fresh = false) =>
+    j<ProjectTree>(`/api/projects/${encodeURIComponent(name)}/tree${fresh ? "?fresh=1" : ""}`),
+  projectStack: (name: string) =>
+    j<ProjectStack>(`/api/projects/${encodeURIComponent(name)}/stack`),
   sessions: () => j<SessionInfo[]>("/api/sessions"),
   harnesses: () => j<HarnessMeta[]>("/api/harnesses"),
   createSession: (project: string, name: string, harness: HarnessId) =>

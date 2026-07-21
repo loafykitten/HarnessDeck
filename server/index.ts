@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join, extname } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { listProjects } from "./projects";
+import { projectStack, projectTree } from "./files";
 import { createSession, hasSession, killSession, listSessions, newlineIntoSession, typeIntoSession } from "./sessions";
 import { getLimits, getMonth, invalidateUsageCaches } from "./usage";
 import { getGreeting } from "./greeting";
@@ -68,6 +69,17 @@ const server = Bun.serve<WsData>({
       // ---- REST ----
       if (pathname === "/api/projects" && req.method === "GET") {
         return json(await listProjects());
+      }
+      const projectTreeMatch = pathname.match(/^\/api\/projects\/([^/]+)\/tree$/);
+      if (projectTreeMatch && req.method === "GET") {
+        const fresh = url.searchParams.get("fresh") === "1";
+        const tree = await projectTree(decodeURIComponent(projectTreeMatch[1]), fresh);
+        return tree ? json(tree) : err("no such project", 404);
+      }
+      const projectStackMatch = pathname.match(/^\/api\/projects\/([^/]+)\/stack$/);
+      if (projectStackMatch && req.method === "GET") {
+        const stack = await projectStack(decodeURIComponent(projectStackMatch[1]));
+        return stack ? json(stack) : err("no such project", 404);
       }
       if (pathname === "/api/sessions" && req.method === "GET") {
         return json(await listSessions());
