@@ -217,13 +217,13 @@
   {#if filesCollapsed}
     <button class="glass files-slim" title="Show files" aria-label="Show files"
       onclick={() => setFilesCollapsed(false)}>
-      <span>‹</span><b>Files</b>
+      <span>▸</span><b>Files</b>
     </button>
   {:else}
     <aside class="glass files-panel" aria-label="Project files">
       <div class="files-head">
         <button class="files-title" title="Collapse files" aria-label="Collapse files"
-          onclick={() => setFilesCollapsed(true)}><span>›</span><b>Files</b></button>
+          onclick={() => setFilesCollapsed(true)}><span class="open">▸</span><b>Files</b></button>
         <button class="files-refresh" class:refreshing title="Refresh files" aria-label="Refresh files"
           aria-busy={refreshing} disabled={refreshing} onclick={refreshFiles}><span>⟳</span></button>
       </div>
@@ -300,18 +300,18 @@
     border-bottom:1px solid var(--glass-brd);background:var(--glass)}
   .files-title{display:flex;align-items:center;gap:7px;min-width:0;flex:1;padding:7px;color:var(--ink-dim);text-align:left}
   .files-title:hover{color:var(--ink)}
-  .files-title span{width:9px;color:var(--ink-faint)}
-  .files-title b{font-size:12px;letter-spacing:.04em}
+  .files-title span,.files-slim span{width:9px;color:var(--ink-faint)}
+  .files-title span.open{transform:rotate(90deg)}
+  .files-title b,.files-slim b{font-size:12px;letter-spacing:.04em}
   .files-refresh{width:28px;height:28px;border-radius:8px;color:var(--ink-faint);font-size:16px}
   .files-refresh:hover{color:var(--accent-2);background:var(--glass-2)}
   .files-refresh span{display:block}
   .files-refresh.refreshing span{animation:file-refresh-spin .7s linear infinite}
   @keyframes file-refresh-spin{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion:reduce){.files-refresh.refreshing span{animation-duration:1.4s}}
-  .files-slim{width:100%;flex:none;min-height:38px;border-radius:13px;display:flex;
-    align-items:center;justify-content:center;gap:9px;padding:0;color:var(--ink-faint)}
+  .files-slim{width:100%;flex:none;min-height:42px;border-radius:13px;display:flex;
+    align-items:center;justify-content:flex-start;gap:7px;padding:0 9px 0 14px;color:var(--ink-dim)}
   .files-slim:hover{color:var(--ink);border-color:var(--glass-brd-lit);box-shadow:0 0 18px -8px var(--accent)}
-  .files-slim b{font-size:10px;letter-spacing:.08em;text-transform:uppercase}
   @media (max-width:720px){
     /* stacked layout: dissolve the sidebar so tabs, terminal, files flow in
        .term-wrap's column — files drop below the terminal via order */
