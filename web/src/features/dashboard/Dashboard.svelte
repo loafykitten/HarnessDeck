@@ -1,10 +1,25 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { app, navigate } from "../../stores/state.svelte";
   import { fmtAgo, initials, projectGradient } from "../../utils/format";
   import ClaudeCard from "./ClaudeCard.svelte";
   import CodexCard from "./CodexCard.svelte";
 
   const liveCount = $derived(app.sessions.length);
+
+  // 1s clock for the usage status line ("updated … · next in Ns") — only
+  // ticks while the dashboard is mounted
+  let now = $state(Date.now());
+  onMount(() => {
+    const t = setInterval(() => { now = Date.now(); }, 1000);
+    return () => clearInterval(t);
+  });
+  const usageLine = $derived.by(() => {
+    const st = app.usageStat;
+    if (st.updatedAt === null) return null;
+    const next = st.nextAt === null ? null : Math.max(0, Math.ceil((st.nextAt - now) / 1000));
+    return `updated ${fmtAgo(st.updatedAt)}${next === null ? "" : ` · next in ${next}s`}`;
+  });
 
   // Stable render order: the server sorts sessions by activity, which reshuffles
   // every 5s poll — that moves the keyed rows in the DOM and restarts their CSS
@@ -37,6 +52,14 @@
   <div class="head-side">
     <span class="pill live"><span class="live-dot"></span> {liveCount} session{liveCount === 1 ? "" : "s"} live</span>
   </div>
+</div>
+
+<div class="usage-stat" aria-live="polite">
+  {#if app.usageStat.refreshing}
+    <span class="stat-spin">↻</span> checking usage…
+  {:else if usageLine}
+    {usageLine}
+  {/if}
 </div>
 
 <ClaudeCard />
@@ -80,6 +103,15 @@
 </div>
 
 <style>
+  /* usage freshness line — quiet, right-aligned, reserved height so the
+     refreshing↔idle swap never shifts the cards below it */
+  .usage-stat{display:flex;justify-content:flex-end;align-items:center;gap:5px;
+    min-height:15px;margin:-4px 2px 4px;font-size:10px;letter-spacing:.06em;
+    color:var(--ink-faint);font-variant-numeric:tabular-nums}
+  .stat-spin{display:inline-block;animation:statspin 1.2s linear infinite}
+  @keyframes statspin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.stat-spin{animation:none}}
+
   /* session status chip — colors ride the theme tokens, so all skins
      (default/crimson/aero) restyle it for free */
   .sess-status{display:inline-flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.08em;

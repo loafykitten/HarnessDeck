@@ -24,7 +24,31 @@ export const app = $state({
   railExpanded: false,
   lastProject: localStorage.getItem("cc-last-project"),
   pet: "biblical" as PetId,
+  // usage freshness for the dashboard's status line: when the numbers were
+  // last fetched, whether a fetch is running, and when the next one is due
+  usageStat: { updatedAt: null as number | null, refreshing: false, nextAt: null as number | null },
 });
+
+/** Usage survives reloads: the dashboard renders last-known numbers instantly
+    instead of blank cards, and the status line dates them honestly. */
+const USAGE_STORE_KEY = "hd-usage-v1";
+
+function hydrateUsage() {
+  try {
+    const raw = localStorage.getItem(USAGE_STORE_KEY);
+    if (!raw || app.usage !== null) return;
+    const cached = JSON.parse(raw) as { at: number; usage: Usage };
+    if (!cached?.usage) return;
+    app.usage = cached.usage;
+    app.usageStat.updatedAt = cached.at ?? null;
+  } catch { /* corrupt cache — first fetch repopulates it */ }
+}
+
+function persistUsage() {
+  try {
+    localStorage.setItem(USAGE_STORE_KEY, JSON.stringify({ at: app.usageStat.updatedAt, usage: app.usage }));
+  } catch { /* quota/private mode — persistence is best-effort */ }
+}
 
 /** Switch the active pet everywhere it shows: rail logo + mascot react to
     app.pet; the favicon link is swapped here by hand. */
@@ -155,6 +179,7 @@ export async function refreshCore() {
 export async function refreshUsage() {
   if (usageInFlight) return;
   usageInFlight = true;
+  app.usageStat.refreshing = true;
   try {
     const next = await api.usage();
     // Keep the last good half when one side fails (comes back null): blanking
@@ -178,8 +203,14 @@ export async function refreshUsage() {
       errors: next.errors,
     };
     lastUsageSuccess = Date.now();
+    app.usageStat.updatedAt = lastUsageSuccess;
+    persistUsage();
   } catch (e) { console.error("refreshUsage", e); }
-  finally { usageInFlight = false; }
+  finally {
+    usageInFlight = false;
+    app.usageStat.refreshing = false;
+    scheduleUsagePoll(); // anchor the next poll to this attempt, not a free-running interval
+  }
 }
 
 export async function refreshGreeting() {
@@ -280,6 +311,21 @@ export async function applyUpdate(h: HarnessId) {
 }
 
 const USAGE_INTERVAL = 30_000;
+
+let usagePollTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Self-scheduling usage poll: one timer, re-armed after every attempt, so
+    usageStat.nextAt is the real next check rather than an interval's phase.
+    Fires while off-dash or hidden skip the fetch but keep the clock moving. */
+function scheduleUsagePoll() {
+  if (usagePollTimer) clearTimeout(usagePollTimer);
+  app.usageStat.nextAt = Date.now() + USAGE_INTERVAL;
+  usagePollTimer = setTimeout(() => {
+    usagePollTimer = null;
+    if (app.route.view === "dash" && !document.hidden) refreshUsage(); // reschedules in its finally
+    else scheduleUsagePoll();
+  }, USAGE_INTERVAL);
+}
 const GREETING_INTERVAL = 15 * 60_000;
 const UPDATE_INTERVAL = 30 * 60_000;
 let lastUsageSuccess = 0;
@@ -301,12 +347,11 @@ export function startPolling() {
   rememberProject(app.route);
   api.harnesses().then(h => { if (h.length) app.harnesses = h; }).catch(console.error);
   api.appConfig().then(c => applyPet(c.pet)).catch(console.error);
+  hydrateUsage();
   refreshCore(); refreshNews();
   if (app.route.view === "dash") catchUpDashboard();
+  scheduleUsagePoll(); // server caches at 60s; 30s halves worst-case lag
   setInterval(refreshCore, 5_000);
-  setInterval(() => {
-    if (app.route.view === "dash" && !document.hidden) refreshUsage();
-  }, USAGE_INTERVAL); // server caches at 60s; 30s halves worst-case lag
   setInterval(() => {
     if (app.route.view === "dash" && !document.hidden) refreshGreeting();
   }, GREETING_INTERVAL);
