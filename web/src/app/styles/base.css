@@ -86,7 +86,9 @@
      rgba(var(--accent-2-rgb),1) 50%,
      rgba(var(--accent-3-rgb),.85) 75%,
      rgba(var(--accent-rgb),1));
-  animation:borderflow 3.5s linear infinite;
+  /* steps caps gradient repaints at 30/s (vs every display frame — the angle
+     is paint, not composite); 3.4°/step is sub-pixel on this soft ring */
+  animation:borderflow 3.5s steps(105) infinite;
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
   -webkit-mask-composite:xor;mask-composite:exclude;
   filter:drop-shadow(0 0 8px rgba(var(--accent-rgb),.55));

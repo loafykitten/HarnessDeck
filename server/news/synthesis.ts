@@ -9,7 +9,8 @@ interface SynthVerdict { n: number; headline?: string; kind?: string; drop?: boo
 
 async function resolveTitles(cands: Candidate[]): Promise<void> {
   await Promise.allSettled(cands.filter(c => c.fetchTitle).map(async c => {
-    const html = await fetchText(c.url, 10_000);
+    const html = await fetchText(c.url, 10_000, false); // each item resolves once — validators would never be reused
+    if (html === null) return;
     const t = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
     if (t) c.title = decode(t).split(/\s+[|·—]\s+/)[0].trim() || c.title;
   }));
@@ -22,15 +23,19 @@ async function resolveTitles(cands: Candidate[]): Promise<void> {
 const MODEL_PREFS = ["qwen3.6-35b-fast", "glm-5.2-short-fast", "glm-5.2-fast", "kimi-k2.6-fast", "kimi-k2.6"];
 let modelChoice: { id: string; at: number } | null = null;
 let demoted = new Set<string>();
+let lastRoster: string[] | null = null; // last 200's ids — a 304 means this is still current
 
 async function pickModel(): Promise<string> {
   const forced = process.env.NEURALWATT_MODEL;
   if (forced) return forced;
   if (modelChoice && Date.now() - modelChoice.at < 24 * 3600_000) return modelChoice.id;
-  let avail: string[] = MODEL_PREFS;
+  let avail: string[] = lastRoster ?? MODEL_PREFS;
   try {
     const list = await fetchJSON<{ data: { id: string }[] }>("https://api.neuralwatt.com/v1/models");
-    avail = list.data.map(m => m.id);
+    if (list !== null) {
+      lastRoster = list.data.map(m => m.id);
+      avail = lastRoster;
+    }
   } catch { /* roster fetch is best-effort; fall back to the static prefs */ }
   const id = MODEL_PREFS.find(m => avail.includes(m) && !demoted.has(m)) ?? MODEL_PREFS[0];
   modelChoice = { id, at: Date.now() };

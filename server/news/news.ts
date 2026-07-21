@@ -13,31 +13,48 @@ const MAX_SYNTH_BATCH = 25; // first run can surface a big backfill; cap the tai
 const TIER_TTL = { status: 3 * 60_000, feeds: 15 * 60_000, slow: 45 * 60_000 };
 const lastRun = { status: 0, feeds: 0, slow: 0 };
 const inFlight = { status: false, feeds: false, slow: false };
+const ingesting = new Set<string>();
 
 async function ingest(cands: Candidate[]): Promise<void> {
-  return locked(async () => {
+  let fresh: Candidate[] = [];
+  let current: NewsPayload["items"] = [];
+  let candsToMark: Candidate[] = [];
+  await locked(async () => {
     const st = await ensureLoaded();
     const seenSet = new Set(st.seen);
-    const fresh = cands
+    const reserved = new Set(ingesting);
+    candsToMark = cands.filter(c => !reserved.has(c.id));
+    fresh = candsToMark
       .filter(c => /^https?:\/\//i.test(c.url)) // feed-supplied URLs land in hrefs
       .filter(c => !seenSet.has(c.id))
       .sort((a, b) => b.at - a.at)
       .slice(0, MAX_SYNTH_BATCH);
-    if (fresh.length) {
-      const items = await synthesize(fresh, st.items);
-      st.items = [...items, ...st.items]
-        .filter((it, i, arr) => arr.findIndex(x => x.id === it.id) === i)
-        .sort((a, b) => b.at - a.at)
-        .slice(0, MAX_ITEMS);
-      st.updatedAt = Date.now();
-    }
-    for (const c of cands) seenSet.add(c.id);
-    const nextSeen = mergeSeen(st.seen, seenSet);
-    const seenChanged = nextSeen.length !== st.seen.length
-      || nextSeen.some((id, i) => id !== st.seen[i]);
-    st.seen = nextSeen;
-    if (fresh.length || seenChanged) await save();
+    for (const c of fresh) ingesting.add(c.id);
+    current = st.items;
   });
+
+  try {
+    const items = fresh.length ? await synthesize(fresh, current) : [];
+    await locked(async () => {
+      const st = await ensureLoaded();
+      const seenSet = new Set(st.seen);
+      if (fresh.length) {
+        st.items = [...items, ...st.items]
+          .filter((it, i, arr) => arr.findIndex(x => x.id === it.id) === i)
+          .sort((a, b) => b.at - a.at)
+          .slice(0, MAX_ITEMS);
+        st.updatedAt = Date.now();
+      }
+      for (const c of candsToMark) seenSet.add(c.id);
+      const nextSeen = mergeSeen(st.seen, seenSet);
+      const seenChanged = nextSeen.length !== st.seen.length
+        || nextSeen.some((id, i) => id !== st.seen[i]);
+      st.seen = nextSeen;
+      if (fresh.length || seenChanged) await save();
+    });
+  } finally {
+    for (const c of fresh) ingesting.delete(c.id);
+  }
 }
 
 function kick(tier: keyof typeof TIER_TTL, run: () => Promise<void>): void {

@@ -43,7 +43,8 @@ let limitsInFlight: Promise<Limits> | null = null;
     Code's job; rotating them here would fight it. */
 interface OAuthCreds { accessToken: string; expiresAt: number }
 const CRED_TTL = 60_000;
-const credCache: { at: number; creds: OAuthCreds | null } = { at: 0, creds: null };
+const CRED_NULL_TTL = 15_000;
+const credCache: { at: number; creds: OAuthCreds | null; loaded: boolean } = { at: 0, creds: null, loaded: false };
 
 function parseCreds(raw: unknown): OAuthCreds | null {
   const o = (raw as any)?.claudeAiOauth;
@@ -69,24 +70,33 @@ async function keychainCreds(): Promise<OAuthCreds | null> {
   } catch { return null; }
 }
 
-async function freshestCreds(force = false): Promise<OAuthCreds | null> {
-  if (!force && credCache.creds && Date.now() - credCache.at < CRED_TTL) return credCache.creds;
+async function loadFreshestCreds(force = false): Promise<{ creds: OAuthCreds | null; fromCache: boolean }> {
+  const ttl = credCache.creds ? CRED_TTL : CRED_NULL_TTL;
+  if (!force && credCache.loaded && Date.now() - credCache.at < ttl) {
+    return { creds: credCache.creds, fromCache: true };
+  }
   const found = (await Promise.all([fileCreds(), keychainCreds()]))
     .filter((c): c is OAuthCreds => c != null)
     .sort((a, b) => b.expiresAt - a.expiresAt); // later expiry wins; a valid token always outranks an expired one
   credCache.creds = found[0] ?? null;
   credCache.at = Date.now();
-  return credCache.creds;
+  credCache.loaded = true;
+  return { creds: credCache.creds, fromCache: false };
 }
 
-function invalidateCredCache() { credCache.at = 0; credCache.creds = null; }
+async function freshestCreds(force = false): Promise<OAuthCreds | null> {
+  return (await loadFreshestCreds(force)).creds;
+}
+
+function invalidateCredCache() { credCache.at = 0; credCache.creds = null; credCache.loaded = false; }
 
 /** No usable token anywhere: both stores expired per expiresAt, or both
     unreadable. Re-reads past the 60s cache before deciding, in case Claude
     Code just refreshed the Keychain. */
 async function credsAreExpired(): Promise<boolean> {
-  const c = await freshestCreds();
-  if (c && c.expiresAt > Date.now()) return false;
+  const first = await loadFreshestCreds();
+  if (first.creds && first.creds.expiresAt > Date.now()) return false;
+  if (!first.fromCache || first.creds === null) return true;
   const fresh = await freshestCreds(true);
   return !fresh || fresh.expiresAt <= Date.now();
 }

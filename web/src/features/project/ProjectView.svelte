@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import "@xterm/xterm/css/xterm.css";
   import { app, navigate, projectSessions, refreshCore } from "../../stores/state.svelte";
   import { api } from "../../lib/api";
   import { fmtAgo } from "../../utils/format";

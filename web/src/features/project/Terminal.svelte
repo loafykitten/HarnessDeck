@@ -20,6 +20,14 @@
   let disposed = false;
   let retryDelay = 1000;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let suspendTimer: ReturnType<typeof setTimeout> | null = null;
+  let suspended = false;
+  // A hidden tab drops its socket (and with it the server-side tmux-attach
+  // pty) after this long; the xterm buffer stays, so scrollback survives the
+  // nap and tmux repaints the live screen on reattach. Long enough that
+  // quick tab flips never pay a reconnect.
+  const SUSPEND_AFTER_MS = 60_000;
   let osc52Pending: string | null = null;
   let lastSentCols: number | null = null;
   let lastSentRows: number | null = null;
@@ -118,19 +126,36 @@
     lastSentRows = term.rows;
   }
 
+  /** Deliberately drop the socket for a long-hidden tab. Stale-socket guards
+      (ws !== sock) keep its late close event from clearing the next socket's
+      timers or scheduling a duplicate reconnect. */
+  function suspend() {
+    suspendTimer = null;
+    if (disposed || suspended) return;
+    suspended = true;
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    reconnecting = false;
+    const sock = ws;
+    ws = null;
+    sock?.close();
+  }
+
   function connect() {
     if (disposed) return;
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${proto}://${location.host}/ws/session/${encodeURIComponent(sessionId)}`);
-    ws.binaryType = "arraybuffer";
-    ws.onopen = () => {
+    const sock = new WebSocket(`${proto}://${location.host}/ws/session/${encodeURIComponent(sessionId)}`);
+    sock.binaryType = "arraybuffer";
+    ws = sock;
+    sock.onopen = () => {
+      if (ws !== sock) return;
       lastSentCols = null;
       lastSentRows = null;
       reconnecting = false;
       retryDelay = 1000;
       doFit();
       for (const data of pending.splice(0)) {
-        ws!.send(JSON.stringify({ type: "input", data }));
+        sock.send(JSON.stringify({ type: "input", data }));
       }
       pendingBytes = 0;
       pendingCapped = false;
@@ -140,10 +165,12 @@
         if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
       }, 30_000);
     };
-    ws.onmessage = (e) => {
+    sock.onmessage = (e) => {
+      if (ws !== sock) return;
       term?.write(typeof e.data === "string" ? e.data : new Uint8Array(e.data));
     };
-    ws.onclose = async () => {
+    sock.onclose = async () => {
+      if (ws !== sock) return; // suspended or superseded — a deliberate close
       if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
       if (disposed) return;
       // Only declare the session dead if tmux says it's gone; otherwise this
@@ -151,15 +178,16 @@
       const alive = await api.sessionAlive(sessionId)
         .then(res => res.alive)
         .catch(() => true); // can't reach server → assume alive, keep retrying
-      if (disposed) return;
+      if (disposed || suspended || ws !== sock) return;
       if (!alive) {
         term?.write("\r\n\x1b[2m— session ended —\x1b[0m\r\n");
         onEnded?.();
         return;
       }
       reconnecting = true;
-      setTimeout(() => {
-        if (disposed) return;
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (disposed || suspended) return;
         term?.reset(); // tmux repaints the full screen on attach
         connect();
       }, retryDelay);
@@ -264,6 +292,8 @@
     return () => {
       disposed = true;
       if (pingTimer) clearInterval(pingTimer);
+      if (retryTimer) clearTimeout(retryTimer);
+      if (suspendTimer) clearTimeout(suspendTimer);
       ro.disconnect();
       mo.disconnect();
       host.removeEventListener("paste", onPaste, true);
@@ -274,8 +304,17 @@
 
   $effect(() => {
     if (active) {
+      if (suspendTimer) { clearTimeout(suspendTimer); suspendTimer = null; }
+      if (suspended) {
+        // no term.reset() here: the buffer holds this tab's scrollback, and
+        // tmux's attach repaint redraws the viewport in place on top of it
+        suspended = false;
+        connect();
+      }
       // refit when this tab becomes visible again
       requestAnimationFrame(() => { doFit(); term?.focus(); });
+    } else {
+      suspendTimer ??= setTimeout(suspend, SUSPEND_AFTER_MS);
     }
   });
 </script>

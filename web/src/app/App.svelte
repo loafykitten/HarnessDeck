@@ -4,9 +4,6 @@
   import Rail from "./Rail.svelte";
   import NewsTicker from "../features/news/NewsTicker.svelte";
   import Dashboard from "../features/dashboard/Dashboard.svelte";
-  import ProjectView from "../features/project/ProjectView.svelte";
-  import ConfigView from "../features/config/ConfigView.svelte";
-  import SkillsView from "../features/skills/SkillsView.svelte";
 
   startPolling();
   installHotkeys();
@@ -28,12 +25,18 @@
       <section class="screen"><Dashboard /></section>
     {:else if app.route.view === "project"}
       {#key app.route.name}
-        <section class="screen fill"><ProjectView project={app.route.name} /></section>
+        {#await import("../features/project/ProjectView.svelte") then ProjectView}
+          <section class="screen fill"><ProjectView.default project={app.route.name} /></section>
+        {/await}
       {/key}
     {:else if app.route.view === "config"}
-      <section class="screen"><ConfigView /></section>
+      {#await import("../features/config/ConfigView.svelte") then ConfigView}
+        <section class="screen"><ConfigView.default /></section>
+      {/await}
     {:else if app.route.view === "skills"}
-      <section class="screen"><SkillsView /></section>
+      {#await import("../features/skills/SkillsView.svelte") then SkillsView}
+        <section class="screen"><SkillsView.default /></section>
+      {/await}
     {/if}
   </div>
 </main>

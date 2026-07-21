@@ -18,6 +18,7 @@ export let statusResolved: NewsItem[] = [];
 export async function refreshStatus(): Promise<void> {
   const results = await Promise.allSettled(STATUS_PAGES.map(async p => {
     const sum = await fetchJSON<{ incidents?: StatusIncident[] }>(p.url);
+    if (sum === null) return null;
     return (sum.incidents ?? []).map<NewsItem>(inc => ({
       id: `st:${p.vendor}:${inc.id}`,
       vendor: p.vendor,
@@ -30,7 +31,7 @@ export async function refreshStatus(): Promise<void> {
   // a failed page keeps its previous incidents rather than clearing them
   const next: NewsItem[] = [];
   results.forEach((r, i) => {
-    if (r.status === "fulfilled") next.push(...r.value);
+    if (r.status === "fulfilled" && r.value !== null) next.push(...r.value);
     else next.push(...statusActive.filter(it => it.vendor === STATUS_PAGES[i].vendor));
   });
   const nextIds = new Set(next.map(it => it.id));
@@ -71,7 +72,9 @@ export async function pollRss(): Promise<Candidate[]> {
   const out: Candidate[] = [];
   const results = await Promise.allSettled(RSS_FEEDS.map(async f => {
     const cutoff = Date.now() - 72 * 3600_000;
-    for (const e of parseFeed(await fetchText(f.url), f.atom)) {
+    const xml = await fetchText(f.url);
+    if (xml === null) return;
+    for (const e of parseFeed(xml, f.atom)) {
       if (e.at < cutoff) continue;
       const vendor = f.vendor ?? vendorOf(e.title);
       if (!vendor) continue;
@@ -108,7 +111,9 @@ export async function pollHN(): Promise<Candidate[]> {
     const u = `https://hn.algolia.com/api/v1/search_by_date?query=${encodeURIComponent(q)}` +
       `&tags=story&numericFilters=points%3E100,created_at_i%3E${since}&hitsPerPage=10`;
     const vendorRe = VENDOR_WORDS.find(([v]) => v === vendor)![1];
-    for (const h of (await fetchJSON<{ hits: HNHit[] }>(u)).hits) {
+    const data = await fetchJSON<{ hits: HNHit[] }>(u, 15_000, false); // `since` makes u one-shot
+    if (data === null) return;
+    for (const h of data.hits) {
       if (!vendorRe.test(h.title)) continue;
       if (!seen.has(h.objectID)) seen.set(h.objectID, {
         id: `hn:${h.objectID}`, vendor, kind: "news", title: h.title,
@@ -135,7 +140,9 @@ export async function pollHF(): Promise<Candidate[]> {
   const cutoff = Date.now() - 7 * 86400_000;
   const results = await Promise.allSettled(HF_ORGS.map(async ({ vendor, org }) => {
     const u = `https://huggingface.co/api/models?author=${org}&sort=createdAt&direction=-1&limit=5`;
-    for (const m of await fetchJSON<{ id: string; createdAt: string }[]>(u)) {
+    const models = await fetchJSON<{ id: string; createdAt: string }[]>(u);
+    if (models === null) return;
+    for (const m of models) {
       const at = Date.parse(m.createdAt) || 0;
       if (at < cutoff) continue;
       out.push({
@@ -164,6 +171,7 @@ export async function pollSitemaps(seenSet: Set<string>): Promise<Candidate[]> {
   const results = await Promise.allSettled(SITEMAPS.map(async s => {
     const seeded = [...seenSet].some(id => id.startsWith(`sm:${s.vendor}:`));
     const xml = await fetchText(s.url, 20_000);
+    if (xml === null) return;
     const smHost = new URL(s.url).hostname;
     for (const b of blocks(xml, "url")) {
       const loc = tagText(b, "loc");
@@ -195,7 +203,8 @@ const MOONSHOT_CHANGELOG = "https://platform.moonshot.ai/docs/changelog";
 
 export async function pollMoonshotChangelog(seenSet: Set<string>): Promise<Candidate[]> {
   const seeded = [...seenSet].some(id => id.startsWith("smh:moonshot:"));
-  const html = await fetchText(MOONSHOT_CHANGELOG, 20_000);
+  const html = await fetchText(MOONSHOT_CHANGELOG, 20_000, false); // hash the body; never trust a 304
+  if (html === null) return [];
   const text = decode(html.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ""));
   const id = `smh:moonshot:${Bun.hash(text).toString(16)}`;
   if (seenSet.has(id)) return [];
