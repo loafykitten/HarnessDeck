@@ -51,7 +51,7 @@ const server = Bun.serve<WsData>({
         if (res) return res;
       }
       if (pathname.startsWith("/api/") || pathname.startsWith("/ws/")) return err("not found", 404);
-      return serveStatic(pathname);
+      return serveStatic(req, pathname);
     } catch (e) {
       console.error(`[${req.method} ${pathname}]`, e);
       return err(e instanceof Error ? e.message : "internal error", 500);

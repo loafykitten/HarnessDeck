@@ -47,9 +47,18 @@ export function locked<T>(fn: () => Promise<T>): Promise<T> {
    page look brand-new on the next poll. Only non-seed ids age out. */
 export function mergeSeen(a: Iterable<string>, b: Iterable<string>): string[] {
   const all = [...new Set([...a, ...b])];
-  if (all.length <= MAX_SEEN) return all;
   const isSeed = (id: string) => id.startsWith("sm:") || id.startsWith("smh:");
-  const seeds = all.filter(isSeed);
-  const rest = all.filter(id => !isSeed(id));
-  return [...seeds, ...rest.slice(-Math.max(0, MAX_SEEN - seeds.length))];
+  const seedKey = (id: string) => id.startsWith("smh:")
+    ? id.slice(0, id.lastIndexOf(":"))
+    : id.slice(0, id.lastIndexOf("@"));
+  const newestSeeds = new Map<string, string>();
+  for (const id of all) {
+    if (isSeed(id)) newestSeeds.set(seedKey(id), id);
+  }
+  const normalized = all.filter(id => !isSeed(id) || newestSeeds.get(seedKey(id)) === id);
+  if (normalized.length <= MAX_SEEN) return normalized;
+  const seeds = normalized.filter(isSeed).slice(-MAX_SEEN);
+  const rest = normalized.filter(id => !isSeed(id));
+  const room = MAX_SEEN - seeds.length;
+  return [...seeds, ...(room > 0 ? rest.slice(-room) : [])];
 }

@@ -11,6 +11,10 @@ const CONFIG_TOML = process.env.HD_CODEX_CONFIG ?? join(CODEX_HOME, "config.toml
     exactly commenting/uncommenting that one line — everything else in the
     file is left byte-identical. */
 export type CodexMode = "api" | "oauth";
+export interface CodexConfig {
+  mode: CodexMode;
+  providerName: string | null;
+}
 
 /** Top-level TOML keys can only appear before the first [section] header,
     so scope the match to that prefix — `model_provider` inside a section
@@ -20,37 +24,12 @@ function topLevel(text: string): string {
   return i === -1 ? text : text.slice(0, i);
 }
 
-export async function getCodexMode(): Promise<CodexMode> {
+export async function getCodexConfig(): Promise<CodexConfig> {
   const text = await Bun.file(CONFIG_TOML).text().catch(() => "");
-  return /^[ \t]*model_provider[ \t]*=/m.test(topLevel(text)) ? "api" : "oauth";
-}
-
-export async function setCodexMode(mode: CodexMode): Promise<CodexMode | { error: string }> {
-  const text = await Bun.file(CONFIG_TOML).text().catch(() => null);
-  if (text === null) return { error: `cannot read ${CONFIG_TOML}` };
   const head = topLevel(text);
-  let newHead: string;
-  if (mode === "oauth") {
-    if (!/^[ \t]*model_provider[ \t]*=/m.test(head)) return "oauth"; // already
-    newHead = head.replace(/^([ \t]*)(model_provider[ \t]*=)/m, "$1# $2");
-  } else {
-    if (/^[ \t]*model_provider[ \t]*=/m.test(head)) return "api"; // already
-    if (!/^[ \t]*#[ \t]*model_provider[ \t]*=/m.test(head)) {
-      return { error: "no commented model_provider line in config.toml to re-enable" };
-    }
-    newHead = head.replace(/^([ \t]*)#[ \t]*(model_provider[ \t]*=)/m, "$1$2");
-  }
-  await Bun.write(CONFIG_TOML, newHead + text.slice(head.length));
-  return mode;
-}
-
-/** Display name of the configured provider: resolves the (active or
-    commented) model_provider id to its [model_providers.<id>] `name`,
-    falling back to the id itself. Null when config.toml has no provider. */
-export async function getCodexProvider(): Promise<string | null> {
-  const text = await Bun.file(CONFIG_TOML).text().catch(() => "");
-  const id = topLevel(text).match(/^[ \t]*(?:#[ \t]*)?model_provider[ \t]*=[ \t]*"([^"]+)"/m)?.[1];
-  if (!id) return null;
+  const mode = /^[ \t]*model_provider[ \t]*=/m.test(head) ? "api" : "oauth";
+  const id = head.match(/^[ \t]*(?:#[ \t]*)?model_provider[ \t]*=[ \t]*"([^"]+)"/m)?.[1];
+  if (!id) return { mode, providerName: null };
   let inSection = false;
   for (const line of text.split("\n")) {
     const header = line.match(/^\s*\[(.+?)\]\s*$/);
@@ -60,9 +39,41 @@ export async function getCodexProvider(): Promise<string | null> {
     }
     if (!inSection) continue;
     const name = line.match(/^[ \t]*name[ \t]*=[ \t]*"([^"]+)"/);
-    if (name) return name[1];
+    if (name) return { mode, providerName: name[1] };
   }
-  return id;
+  return { mode, providerName: id };
+}
+
+export async function getCodexMode(): Promise<CodexMode> {
+  return (await getCodexConfig()).mode;
+}
+
+export async function setCodexMode(mode: CodexMode):
+  Promise<{ mode: CodexMode; configText: string } | { error: string }> {
+  const text = await Bun.file(CONFIG_TOML).text().catch(() => null);
+  if (text === null) return { error: `cannot read ${CONFIG_TOML}` };
+  const head = topLevel(text);
+  let newHead: string;
+  if (mode === "oauth") {
+    if (!/^[ \t]*model_provider[ \t]*=/m.test(head)) return { mode, configText: text }; // already
+    newHead = head.replace(/^([ \t]*)(model_provider[ \t]*=)/m, "$1# $2");
+  } else {
+    if (/^[ \t]*model_provider[ \t]*=/m.test(head)) return { mode, configText: text }; // already
+    if (!/^[ \t]*#[ \t]*model_provider[ \t]*=/m.test(head)) {
+      return { error: "no commented model_provider line in config.toml to re-enable" };
+    }
+    newHead = head.replace(/^([ \t]*)#[ \t]*(model_provider[ \t]*=)/m, "$1$2");
+  }
+  const configText = newHead + text.slice(head.length);
+  await Bun.write(CONFIG_TOML, configText);
+  return { mode, configText };
+}
+
+/** Display name of the configured provider: resolves the (active or
+    commented) model_provider id to its [model_providers.<id>] `name`,
+    falling back to the id itself. Null when config.toml has no provider. */
+export async function getCodexProvider(): Promise<string | null> {
+  return (await getCodexConfig()).providerName;
 }
 
 export interface CodexPlan {

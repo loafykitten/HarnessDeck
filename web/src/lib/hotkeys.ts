@@ -44,7 +44,11 @@ function handle(e: KeyboardEvent): boolean {
   return false;
 }
 
+let installed = false;
+
 export function installHotkeys() {
+  if (installed) return;
+  installed = true;
   // capture phase: fire ahead of xterm's own key handling
   window.addEventListener("keydown", (e) => {
     if (!e.ctrlKey || e.metaKey || e.altKey) return;

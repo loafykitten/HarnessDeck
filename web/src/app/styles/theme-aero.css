@@ -6,11 +6,14 @@
 
 /* sky: vertical gradient, slow vertical drift */
 :root[data-theme="aero"] .bg{
+  background:none;
+}
+:root[data-theme="aero"] .bg::before{
+  width:100%;height:200%;
   background:linear-gradient(180deg,var(--bg-a),var(--bg-b) 45%,var(--bg-c) 80%,#e6f6e6);
-  background-size:100% 200%;
   animation:aerodrift 40s ease-in-out infinite;
 }
-@keyframes aerodrift{0%,100%{background-position:50% 0%}50%{background-position:50% 18%}}
+@keyframes aerodrift{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,-9%,0)}}
 
 /* clouds: soft white ellipses on the free .orbs pseudos */
 :root[data-theme="aero"] .orbs::before,
@@ -122,4 +125,3 @@
   :root[data-theme="aero"] .orbs::before,
   :root[data-theme="aero"] .orbs::after{animation:none !important}
 }
-

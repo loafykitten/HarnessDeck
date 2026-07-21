@@ -85,11 +85,12 @@ export interface SkillSummary { name: string; description: string; files: number
 export interface SkillDetail {
   name: string;
   frontmatter: Record<string, string>;
+  skillMd?: string;
   files: { path: string; size: number; mtime: number; editable: boolean }[];
   harnesses: HarnessId[];
 }
 export interface SkillJob {
   id: string; skillName: string;
   status: "running" | "done" | "error";
-  error?: string; startedAt: number;
+  error?: string; startedAt: number; completedAt?: number;
 }

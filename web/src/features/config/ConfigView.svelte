@@ -40,6 +40,13 @@
     }
     if (requested === "codex") {
       codexMode = app.usage?.codex?.mode ?? null;
+      // usage polling is dash-only now: a cold load straight into /config has
+      // no usage snapshot yet, so fetch one to seed the auth-mode toggle
+      if (codexMode === null) {
+        refreshUsage().then(() => {
+          if (harness === "codex" && codexMode === null) codexMode = app.usage?.codex?.mode ?? null;
+        });
+      }
     }
   }
 
@@ -114,9 +121,9 @@
     try {
       const res = await api.setCodexMode(mode);
       codexMode = res.mode;
-      settingsText = await api.settingsText("codex"); // the file just changed
+      settingsText = res.configText;
+      if (app.usage?.codex) app.usage.codex.mode = res.mode;
       flash("settings", true, `auth mode → ${mode === "api" ? "API key" : "ChatGPT OAuth"}`);
-      refreshUsage();
     } catch (e) { flash("settings", false, String(e)); }
     finally { codexModeBusy = false; }
   }

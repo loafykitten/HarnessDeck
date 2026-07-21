@@ -21,6 +21,8 @@
   let retryDelay = 1000;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
   let osc52Pending: string | null = null;
+  let lastSentCols: number | null = null;
+  let lastSentRows: number | null = null;
 
   function themeColors() {
     const css = getComputedStyle(document.documentElement);
@@ -35,11 +37,22 @@
   }
 
   let pending: string[] = [];
+  let pendingBytes = 0;
+  let pendingCapped = false;
+  const MAX_PENDING_BYTES = 64 * 1024;
   function sendInput(data: string) {
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "input", data }));
     } else {
+      if (pendingCapped) return;
+      const bytes = new TextEncoder().encode(data).byteLength;
+      if (pendingBytes + bytes > MAX_PENDING_BYTES) {
+        pendingCapped = true;
+        return;
+      }
       pending.push(data); // typed while (re)connecting — flush on open
+      pendingBytes += bytes;
+      if (pendingBytes === MAX_PENDING_BYTES) pendingCapped = true;
     }
   }
 
@@ -99,7 +112,10 @@
   function doFit() {
     if (!fit || !term || ws?.readyState !== WebSocket.OPEN) return;
     fit.fit();
+    if (term.cols === lastSentCols && term.rows === lastSentRows) return;
     ws!.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+    lastSentCols = term.cols;
+    lastSentRows = term.rows;
   }
 
   function connect() {
@@ -108,12 +124,16 @@
     ws = new WebSocket(`${proto}://${location.host}/ws/session/${encodeURIComponent(sessionId)}`);
     ws.binaryType = "arraybuffer";
     ws.onopen = () => {
+      lastSentCols = null;
+      lastSentRows = null;
       reconnecting = false;
       retryDelay = 1000;
       doFit();
       for (const data of pending.splice(0)) {
         ws!.send(JSON.stringify({ type: "input", data }));
       }
+      pendingBytes = 0;
+      pendingCapped = false;
       // keepalive: Bun closes idle sockets; background tabs throttle timers,
       // so ping well inside the server's 960s window
       pingTimer = setInterval(() => {
@@ -128,8 +148,8 @@
       if (disposed) return;
       // Only declare the session dead if tmux says it's gone; otherwise this
       // was a dropped socket (server restart, sleep, idle timeout) — reconnect.
-      const alive = await api.sessions()
-        .then(list => list.some(s => s.id === sessionId))
+      const alive = await api.sessionAlive(sessionId)
+        .then(res => res.alive)
         .catch(() => true); // can't reach server → assume alive, keep retrying
       if (disposed) return;
       if (!alive) {

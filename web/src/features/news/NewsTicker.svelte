@@ -38,32 +38,46 @@
   // Constant px/s is continuous across content swaps and hover pauses.
   const SPEED = 34; // px/s
   let track = $state<HTMLDivElement | undefined>();
-  let groupW = 0;
+  let groupW = $state(0);
   let offset = 0;
+  let raf = 0;
+  let motionEnabled = false;
+  let last = 0;
+
+  function startLoop() {
+    if (!motionEnabled || raf || paused || !items.length || !track || groupW <= 0) return;
+    last = performance.now();
+    raf = requestAnimationFrame(step);
+  }
+
+  function step(now: number) {
+    raf = 0;
+    if (paused || !items.length || !track || groupW <= 0) return;
+    const dt = Math.min(0.1, (now - last) / 1000); // clamp tab-switch gaps
+    last = now;
+    offset = (offset + SPEED * dt) % groupW;
+    track.style.transform = `translate3d(${-offset}px,0,0)`;
+    raf = requestAnimationFrame(step);
+  }
 
   // Keep the loop-point width current (content swaps, font load, resizes).
   $effect(() => {
     const group = track?.firstElementChild as HTMLElement | undefined;
     if (!group) return;
-    const ro = new ResizeObserver(() => { groupW = group.offsetWidth; });
+    const ro = new ResizeObserver(() => { groupW = group.offsetWidth; startLoop(); });
     ro.observe(group);
     return () => ro.disconnect();
   });
 
+  $effect(() => {
+    items.length; paused; track; groupW;
+    startLoop();
+  });
+
   onMount(() => {
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let raf = 0;
-    let last = performance.now();
-    const step = (now: number) => {
-      const dt = Math.min(0.1, (now - last) / 1000); // clamp tab-switch gaps
-      last = now;
-      if (!paused && track && groupW > 0) {
-        offset = (offset + SPEED * dt) % groupW;
-        track.style.transform = `translate3d(${-offset}px,0,0)`;
-      }
-      raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
+    motionEnabled = true;
+    startLoop();
     return () => { cancelAnimationFrame(raf); clearTimeout(resumeTimer); };
   });
 

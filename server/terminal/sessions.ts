@@ -70,7 +70,22 @@ async function sessionStatus(id: string, harness: HarnessId): Promise<SessionSta
   return "idle";
 }
 
-export async function listSessions(): Promise<Session[]> {
+const SESSION_CACHE_TTL = 1_750;
+let sessionCacheGeneration = 0;
+let baseCache: { at: number; data: Session[] } | null = null;
+let baseInFlight: Promise<Session[]> | null = null;
+let statusCache: { at: number; data: Session[] } | null = null;
+let statusInFlight: Promise<Session[]> | null = null;
+
+function invalidateSessionCaches(): void {
+  sessionCacheGeneration += 1;
+  baseCache = null;
+  baseInFlight = null;
+  statusCache = null;
+  statusInFlight = null;
+}
+
+async function computeBaseSessions(): Promise<Session[]> {
   // '|' separator: tmux mangles control chars (like \t) into '_' in -F output,
   // and '|' can never appear in our sanitized session names
   const { ok, out } = await tmux(
@@ -98,10 +113,39 @@ export async function listSessions(): Promise<Session[]> {
       status: "idle",
     });
   }
-  const statuses = await Promise.all(sessions.map(s => sessionStatus(s.id, s.harness)));
-  sessions.forEach((s, i) => { s.status = statuses[i]; });
   sessions.sort((a, b) => b.activity - a.activity);
   return sessions;
+}
+
+export async function listSessionsBase(): Promise<Session[]> {
+  if (baseCache && Date.now() - baseCache.at < SESSION_CACHE_TTL) return baseCache.data;
+  if (baseInFlight) return baseInFlight;
+  const generation = sessionCacheGeneration;
+  const pending = computeBaseSessions().then(data => {
+    if (generation === sessionCacheGeneration) baseCache = { at: Date.now(), data };
+    return data;
+  });
+  baseInFlight = pending;
+  const clear = () => { if (baseInFlight === pending) baseInFlight = null; };
+  pending.then(clear, clear);
+  return pending;
+}
+
+export async function listSessions(): Promise<Session[]> {
+  if (statusCache && Date.now() - statusCache.at < SESSION_CACHE_TTL) return statusCache.data;
+  if (statusInFlight) return statusInFlight;
+  const generation = sessionCacheGeneration;
+  const pending = (async () => {
+    const sessions = await listSessionsBase();
+    const statuses = await Promise.all(sessions.map(s => sessionStatus(s.id, s.harness)));
+    const data = sessions.map((session, i) => ({ ...session, status: statuses[i] }));
+    if (generation === sessionCacheGeneration) statusCache = { at: Date.now(), data };
+    return data;
+  })();
+  statusInFlight = pending;
+  const clear = () => { if (statusInFlight === pending) statusInFlight = null; };
+  pending.then(clear, clear);
+  return pending;
 }
 
 export async function createSession(project: string, name: string, harness: HarnessId = DEFAULT_HARNESS): Promise<{ id: string } | { error: string }> {
@@ -126,12 +170,14 @@ export async function createSession(project: string, name: string, harness: Harn
   await ensureClipboard();
   // no '=' prefix: set-option's -t is a pane-style target that rejects it
   await tmux("set-option", "-t", `${id}:`, "status", "off");
+  invalidateSessionCaches();
   return { id };
 }
 
 export async function killSession(id: string): Promise<boolean> {
   if (!id.startsWith(PREFIX)) return false;
   const res = await tmux("kill-session", "-t", `=${id}`);
+  if (res.ok) invalidateSessionCaches();
   return res.ok;
 }
 

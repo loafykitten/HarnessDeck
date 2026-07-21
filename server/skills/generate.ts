@@ -11,16 +11,27 @@ export interface SkillJob {
   status: "running" | "done" | "error";
   error?: string;
   startedAt: number;
+  completedAt?: number;
 }
 
 const jobs = new Map<string, SkillJob>();
+const JOB_TTL = 10 * 60_000;
+
+function pruneJobs(): void {
+  const cutoff = Date.now() - JOB_TTL;
+  for (const [id, job] of jobs) {
+    if (job.completedAt !== undefined && job.completedAt <= cutoff) jobs.delete(id);
+  }
+}
 
 export function getJob(id: string): SkillJob | null {
+  pruneJobs();
   return jobs.get(id) ?? null;
 }
 
 export async function generateSkill(rawName: string, prompt: string):
   Promise<{ job: string } | { error: string }> {
+  pruneJobs();
   const name = sanitizeName(rawName);
   if (!name) return { error: "invalid skill name" };
   if (!prompt.trim()) return { error: "prompt required" };
@@ -65,6 +76,8 @@ export async function generateSkill(rawName: string, prompt: string):
       job.status = "error";
       job.error = e instanceof Error ? e.message : "generation failed";
       await rm(dir, { recursive: true, force: true }).catch(() => {});
+    } finally {
+      job.completedAt = Date.now();
     }
   })();
 

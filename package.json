@@ -6,7 +6,7 @@
   "scripts": {
     "start": "bun server/index.ts",
     "dev": "bun --watch server/index.ts",
-    "build:web": "cd web && bun run build",
+    "build:web": "cd web && bun run build && bun run scripts/compress.ts",
     "watch:web": "cd web && bun run build -- --watch",
     "build": "bun run build:web"
   },

@@ -1,11 +1,14 @@
 /* ============ BACKGROUND ============ */
 .bg{
-  position:fixed;inset:0;z-index:-4;
-  background:linear-gradient(135deg,var(--bg-a),var(--bg-b) 45%,var(--bg-c));
-  background-size:200% 200%;
-  animation:drift 22s ease-in-out infinite;
+  position:fixed;inset:0;z-index:-4;overflow:clip;
 }
-@keyframes drift{0%,100%{background-position:0% 0%}50%{background-position:100% 100%}}
+.bg::before{
+  content:"";position:absolute;inset:0;width:200%;height:200%;
+  background:linear-gradient(135deg,var(--bg-a),var(--bg-b) 45%,var(--bg-c));
+  animation:drift 22s ease-in-out infinite;
+  will-change:transform;
+}
+@keyframes drift{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(-50%,-50%,0)}}
 .orbs{position:fixed;inset:0;z-index:-3;overflow:hidden}
 .orb{position:absolute;border-radius:50%;opacity:.55;mix-blend-mode:screen;
   filter:blur(58px);will-change:transform,opacity}
@@ -45,7 +48,7 @@
   background:radial-gradient(circle at 50% 0%,rgba(255,255,255,.05),transparent 55%)}
 
 @media (prefers-reduced-motion:reduce){
-  .bg,.orb,.crt,.glow::before,.bar i::before,.bar-glow,.bar-glow::before,
+  .bg::before,.orb,.crt,.glow::before,.bar i::before,.bar-glow,.bar-glow::before,
   .live-dot,.mini-dot.on,.tdot,.stat-big,.tk-dot.outage,
   .mascot-roller,.mascot-wheel,.mascot-bubble,.mascot-hopper,.mascot-glyph{animation:none !important}
   .bar i,.bar-glow,.arc,.arc-glow{transition:none !important}
@@ -99,4 +102,3 @@
     0 0 22px -8px rgba(var(--accent-rgb),.5),
     inset 0 1px 0 var(--glass-brd-lit);
 }
-

@@ -34,6 +34,7 @@ export interface Limits {
 
 interface Cache<T> { at: number; data: T | null }
 const limitsCache: Cache<Limits> = { at: 0, data: null };
+let limitsInFlight: Promise<Limits> | null = null;
 
 /** OAuth creds live in two stores that can disagree: the Keychain entry
     Claude Code maintains, and ~/.claude/.credentials.json used over ssh.
@@ -142,12 +143,8 @@ function renewalFromDay(day: number, direction: "next" | "prev"): Date {
   return d;
 }
 
-export function invalidateUsageCaches() {
-  limitsCache.at = 0;
+export function invalidateClaudeMonthCache() {
   monthCache.at = 0;
-  backoff.until = 0;
-  backoff.attempts = 0;
-  invalidateCredCache();
 }
 
 /** The credentials file's subscriptionType goes stale after plan changes —
@@ -244,7 +241,15 @@ function authExpiredLimits(): Limits {
 
 async function getLimitsRaw(): Promise<Limits> {
   if (limitsCache.data && !limitsCache.data.stale && Date.now() - limitsCache.at < 60_000) return limitsCache.data;
+  if (limitsInFlight) return limitsInFlight;
+  const pending = computeLimitsRaw();
+  limitsInFlight = pending;
+  const clear = () => { if (limitsInFlight === pending) limitsInFlight = null; };
+  pending.then(clear, clear);
+  return pending;
+}
 
+async function computeLimitsRaw(): Promise<Limits> {
   if (Date.now() < backoff.until) {
     const cached = await staleLimits(`rate-limited until ${new Date(backoff.until).toLocaleTimeString()}`);
     if (cached) return cached;
@@ -306,6 +311,7 @@ export interface MonthUsage {
 }
 
 const monthCache: Cache<MonthUsage> = { at: 0, data: null };
+let monthInFlight: Promise<MonthUsage> | null = null;
 
 /** Sum Claude-model tokens/cost from a list of ccusage entries. */
 function sumClaudeModels(entries: any[]) {
@@ -329,12 +335,15 @@ const localYmd = (d: Date) =>
 export async function getMonth(): Promise<MonthUsage> {
   // 60s: short enough that the dashboard visibly ticks while sessions run
   if (monthCache.data && Date.now() - monthCache.at < 60_000) return monthCache.data;
-  try {
-    return await computeMonth();
-  } catch (e) {
+  if (monthInFlight) return monthInFlight;
+  const pending = computeMonth().catch(e => {
     if (monthCache.data) return monthCache.data; // serve stale over failing
     throw e;
-  }
+  });
+  monthInFlight = pending;
+  const clear = () => { if (monthInFlight === pending) monthInFlight = null; };
+  pending.then(clear, clear);
+  return pending;
 }
 
 async function computeMonth(): Promise<MonthUsage> {
@@ -345,7 +354,7 @@ async function computeMonth(): Promise<MonthUsage> {
     ? renewalFromDay(cfg.renewalDay, "prev")
     : new Date(now.getFullYear(), now.getMonth(), 1);
   const p = Bun.spawn(
-    ["bunx", "ccusage", "daily", "--since", localYmd(start).replaceAll("-", ""), "--json"],
+    ["bunx", "ccusage", "claude", "daily", "--since", localYmd(start).replaceAll("-", ""), "--json"],
     { stdout: "pipe", stderr: "ignore" },
   );
   const out = await new Response(p.stdout).text();

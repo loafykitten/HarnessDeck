@@ -37,11 +37,12 @@ export async function getAppConfig(): Promise<AppConfig> {
   }
 }
 
-export async function setAppConfig(patch: Partial<AppConfig>): Promise<AppConfig> {
-  const next = { ...(await getAppConfig()), ...patch };
+export async function setAppConfig(patch: Partial<AppConfig>): Promise<{ previous: AppConfig; next: AppConfig }> {
+  const previous = await getAppConfig();
+  const next = { ...previous, ...patch };
   await mkdir(dirname(APP_CONFIG_PATH), { recursive: true });
   await Bun.write(APP_CONFIG_PATH, JSON.stringify(next, null, 2) + "\n");
-  return next;
+  return { previous, next };
 }
 
 export async function readSettings(harness: HarnessId): Promise<string> {

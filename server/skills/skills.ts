@@ -89,24 +89,26 @@ export async function listSkills(): Promise<SkillSummary[]> {
     } catch {
       continue;
     }
-    for (const e of entries) {
-      if (!e.isDirectory() || e.name.startsWith(".")) continue;
+    const summaries = await Promise.all(entries.map(async e => {
+      if (!e.isDirectory() || e.name.startsWith(".")) return null;
       const md = Bun.file(join(HARNESSES[h].skillsDir, e.name, "SKILL.md"));
-      if (!(await md.exists())) continue;
+      if (!(await md.exists())) return null;
       const existing = byName.get(e.name);
       if (existing) {
         existing.harnesses.push(h);
-        continue; // description/files come from the first owner
+        return null; // description/files come from the first owner
       }
-      const fm = parseFrontmatter(await md.text());
-      const files = await walkFiles(h, e.name);
-      byName.set(e.name, {
+      const [text, files] = await Promise.all([md.text(), walkFiles(h, e.name)]);
+      return {
         name: e.name,
-        description: fm.description ?? "",
+        description: parseFrontmatter(text).description ?? "",
         files: files.length,
         updated: Math.max(0, ...files.map(f => f.mtime)),
         harnesses: [h],
-      });
+      } satisfies SkillSummary;
+    }));
+    for (const summary of summaries) {
+      if (summary) byName.set(summary.name, summary);
     }
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -117,30 +119,28 @@ interface SkillFile { path: string; size: number; mtime: number; editable: boole
 async function walkFiles(harness: HarnessId, name: string, sub = "", depth = 0): Promise<SkillFile[]> {
   const dir = skillPath(harness, name);
   if (!dir || depth > 3) return [];
-  const files: SkillFile[] = [];
   let entries;
   try {
     entries = await readdir(join(dir, sub), { withFileTypes: true });
   } catch {
     return [];
   }
-  for (const e of entries) {
-    if (e.name.startsWith(".")) continue;
+  const groups = await Promise.all(entries.map(async e => {
+    if (e.name.startsWith(".")) return [];
     const rel = sub ? join(sub, e.name) : e.name;
     if (e.isDirectory()) {
-      files.push(...await walkFiles(harness, name, rel, depth + 1));
-    } else {
-      const s = await stat(join(dir, rel));
-      const ext = rel.slice(rel.lastIndexOf(".")).toLowerCase();
-      files.push({
-        path: rel,
-        size: s.size,
-        mtime: s.mtimeMs,
-        editable: TEXT_EXT.has(ext) && s.size <= MAX_EDIT_SIZE,
-      });
+      return walkFiles(harness, name, rel, depth + 1);
     }
-  }
-  return files;
+    const s = await stat(join(dir, rel));
+    const ext = rel.slice(rel.lastIndexOf(".")).toLowerCase();
+    return [{
+      path: rel,
+      size: s.size,
+      mtime: s.mtimeMs,
+      editable: TEXT_EXT.has(ext) && s.size <= MAX_EDIT_SIZE,
+    }];
+  }));
+  return groups.flat();
 }
 
 export async function getSkill(name: string) {
@@ -148,11 +148,18 @@ export async function getSkill(name: string) {
   if (owners.length === 0) return null;
   const primary = owners[0];
   const md = Bun.file(join(skillPath(primary, name)!, "SKILL.md"));
-  const files = await walkFiles(primary, name);
+  const [skillMd, files] = await Promise.all([md.text(), walkFiles(primary, name)]);
   // SKILL.md first, then alphabetical
   files.sort((a, b) =>
     (a.path === "SKILL.md" ? -1 : b.path === "SKILL.md" ? 1 : a.path.localeCompare(b.path)));
-  return { name, frontmatter: parseFrontmatter(await md.text()), files, harnesses: owners };
+  const editable = files.find(f => f.path === "SKILL.md")?.editable;
+  return {
+    name,
+    frontmatter: parseFrontmatter(skillMd),
+    files,
+    harnesses: owners,
+    ...(editable ? { skillMd } : {}),
+  };
 }
 
 export async function readSkillFile(name: string, rel: string): Promise<string | null> {

@@ -55,9 +55,15 @@ function rememberProject(route: Route) {
   }
 }
 
-export function navigate(route: Route) {
+function setRoute(route: Route) {
+  const enteringDash = app.route.view !== "dash" && route.view === "dash";
   app.route = route;
   rememberProject(route);
+  if (enteringDash) catchUpDashboard();
+}
+
+export function navigate(route: Route) {
+  setRoute(route);
   const hash =
     route.view === "project"
       ? `#/project/${encodeURIComponent(route.name)}${route.session ? "/" + encodeURIComponent(route.session) : ""}`
@@ -68,8 +74,7 @@ export function navigate(route: Route) {
 }
 
 window.addEventListener("hashchange", () => {
-  app.route = parseRoute(location.hash);
-  rememberProject(app.route);
+  setRoute(parseRoute(location.hash));
 });
 
 /** Open the last active project, falling back to the busiest/first one. */
@@ -110,25 +115,46 @@ function isOnScreen(s: SessionInfo): boolean {
   return activeId === s.id;
 }
 
+let coreInFlight = false;
+let usageInFlight = false;
+let greetingInFlight = false;
+let newsInFlight = false;
+let previousProjectsPayload: string | null = null;
+let previousSessionsPayload: string | null = null;
+
 export async function refreshCore() {
+  if (coreInFlight) return;
+  coreInFlight = true;
   try {
     const [projects, sessions] = await Promise.all([api.projects(), api.sessions()]);
-    const prev = new Map(app.sessions.map(s => [s.id, s.status]));
-    app.projects = projects;
-    app.sessions = sessions;
-    // chime when a session stops working while not being watched; if several
-    // land in one poll, a question outranks a completion — one sound, not a chord
-    const stopped = sessions.filter(s =>
-      prev.get(s.id) === "working" && s.status !== "working" && !isOnScreen(s));
-    if (stopped.length > 0) {
-      chime(stopped.some(s => s.status === "waiting") ? "question" : "done");
+    const projectsPayload = JSON.stringify(projects);
+    const sessionsPayload = JSON.stringify(sessions);
+    if (projectsPayload !== previousProjectsPayload) {
+      previousProjectsPayload = projectsPayload;
+      app.projects = projects;
+    }
+    if (sessionsPayload !== previousSessionsPayload) {
+      previousSessionsPayload = sessionsPayload;
+      const prev = new Map(app.sessions.map(s => [s.id, s.status]));
+      app.sessions = sessions;
+      // chime when a session stops working while not being watched; if several
+      // land in one poll, a question outranks a completion — one sound, not a chord
+      const stopped = sessions.filter(s =>
+        prev.get(s.id) === "working" && s.status !== "working" && !isOnScreen(s));
+      if (stopped.length > 0) {
+        chime(stopped.some(s => s.status === "waiting") ? "question" : "done");
+      }
     }
   } catch (e) {
     console.error("refreshCore", e);
+  } finally {
+    coreInFlight = false;
   }
 }
 
 export async function refreshUsage() {
+  if (usageInFlight) return;
+  usageInFlight = true;
   try {
     const next = await api.usage();
     // Keep the last good half when one side fails (comes back null): blanking
@@ -151,15 +177,24 @@ export async function refreshUsage() {
         : app.usage?.codex ?? null,
       errors: next.errors,
     };
+    lastUsageSuccess = Date.now();
   } catch (e) { console.error("refreshUsage", e); }
+  finally { usageInFlight = false; }
 }
 
 export async function refreshGreeting() {
-  try { app.greeting = await api.greeting(); } catch (e) { console.error("refreshGreeting", e); }
+  if (greetingInFlight) return;
+  greetingInFlight = true;
+  try { app.greeting = await api.greeting(); lastGreetingSuccess = Date.now(); }
+  catch (e) { console.error("refreshGreeting", e); }
+  finally { greetingInFlight = false; }
 }
 
 export async function refreshNews() {
+  if (newsInFlight) return;
+  newsInFlight = true;
   try { app.news = await api.news(); } catch (e) { console.error("refreshNews", e); }
+  finally { newsInFlight = false; }
 }
 
 /** How long a finished `claude update` stays on the chip before it falls back
@@ -217,6 +252,7 @@ export async function refreshUpdate(force = false) {
   const startedAt = Date.now();
   try {
     app.updates = await api.updates(force);
+    lastUpdateSuccess = Date.now();
     for (const h of ["claude", "codex"] as HarnessId[]) {
       const job = app.updates[h]?.job;
       if (job?.status === "running") watchUpdateJob();
@@ -243,18 +279,46 @@ export async function applyUpdate(h: HarnessId) {
   } catch (e) { console.error("applyUpdate", e); }
 }
 
+const USAGE_INTERVAL = 30_000;
+const GREETING_INTERVAL = 15 * 60_000;
+const UPDATE_INTERVAL = 30 * 60_000;
+let lastUsageSuccess = 0;
+let lastGreetingSuccess = 0;
+let lastUpdateSuccess = 0;
+let pollingStarted = false;
+
+function catchUpDashboard() {
+  if (document.hidden) return;
+  const now = Date.now();
+  if (now - lastUsageSuccess >= USAGE_INTERVAL) refreshUsage();
+  if (now - lastGreetingSuccess >= GREETING_INTERVAL) refreshGreeting();
+  if (now - lastUpdateSuccess >= UPDATE_INTERVAL) refreshUpdate();
+}
+
 export function startPolling() {
+  if (pollingStarted) return;
+  pollingStarted = true;
   rememberProject(app.route);
   api.harnesses().then(h => { if (h.length) app.harnesses = h; }).catch(console.error);
   api.appConfig().then(c => applyPet(c.pet)).catch(console.error);
-  refreshCore(); refreshUsage(); refreshGreeting(); refreshUpdate(); refreshNews();
+  refreshCore(); refreshNews();
+  if (app.route.view === "dash") catchUpDashboard();
   setInterval(refreshCore, 5_000);
-  setInterval(refreshUsage, 30_000); // server caches at 60s; 30s halves worst-case lag
-  setInterval(refreshGreeting, 15 * 60_000);
+  setInterval(() => {
+    if (app.route.view === "dash" && !document.hidden) refreshUsage();
+  }, USAGE_INTERVAL); // server caches at 60s; 30s halves worst-case lag
+  setInterval(() => {
+    if (app.route.view === "dash" && !document.hidden) refreshGreeting();
+  }, GREETING_INTERVAL);
   setInterval(refreshNews, 60_000); // each poll also drives the server's tiered pollers
-  setInterval(() => refreshUpdate(), 30 * 60_000);
+  setInterval(() => {
+    if (app.route.view === "dash" && !document.hidden) refreshUpdate();
+  }, UPDATE_INTERVAL);
   // returning to the tab (throttled timers) → catch up immediately
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) { refreshCore(); refreshUsage(); }
+    if (!document.hidden) {
+      refreshCore();
+      if (app.route.view === "dash") refreshUsage();
+    }
   });
 }

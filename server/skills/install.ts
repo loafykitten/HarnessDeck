@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { INSTALL_DIR, parseFrontmatter, run, sanitizeName } from "./skills";
 
+const MAX_ZIP_BYTES = 200 * 1024 * 1024;
+
 export async function installFromUrl(url: string):
   Promise<{ installed: string[]; skipped: string[] } | { error: string }> {
   if (!/^https?:\/\//.test(url)) return { error: "only http(s) URLs are supported" };
@@ -14,8 +16,12 @@ export async function installFromUrl(url: string):
     if (/\.zip($|\?)/.test(url)) {
       const res = await fetch(url, { redirect: "follow" });
       if (!res.ok) return { error: `download failed: HTTP ${res.status}` };
+      const contentLength = Number(res.headers.get("content-length"));
+      if (Number.isFinite(contentLength) && contentLength > MAX_ZIP_BYTES) {
+        return { error: "download too large (200MB limit)" };
+      }
       const zipPath = join(tmp, "skill.zip");
-      await Bun.write(zipPath, await res.blob());
+      await Bun.write(zipPath, res);
       const unzip = await run(["unzip", "-q", zipPath, "-d", join(tmp, "x")], { timeoutMs: 60_000 });
       if (!unzip.ok) return { error: "unzip failed" };
       root = join(tmp, "x");

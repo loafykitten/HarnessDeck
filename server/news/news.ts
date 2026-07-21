@@ -32,8 +32,11 @@ async function ingest(cands: Candidate[]): Promise<void> {
       st.updatedAt = Date.now();
     }
     for (const c of cands) seenSet.add(c.id);
-    st.seen = mergeSeen(st.seen, seenSet);
-    await save();
+    const nextSeen = mergeSeen(st.seen, seenSet);
+    const seenChanged = nextSeen.length !== st.seen.length
+      || nextSeen.some((id, i) => id !== st.seen[i]);
+    st.seen = nextSeen;
+    if (fresh.length || seenChanged) await save();
   });
 }
 
@@ -55,19 +58,35 @@ function kick(tier: keyof typeof TIER_TTL, run: () => Promise<void>): void {
 export async function getNews(): Promise<NewsPayload> {
   const st = await ensureLoaded();
   kick("status", refreshStatus);
-  kick("feeds", async () => ingest([...(await pollRss()), ...(await pollHN())]));
+  kick("feeds", async () => {
+    const [rss, hn] = await Promise.all([pollRss(), pollHN()]);
+    await ingest([...rss, ...hn]);
+  });
   kick("slow", async () => {
     const seenSet = new Set((await ensureLoaded()).seen);
-    const sm = await pollSitemaps(seenSet);
-    const mc = await pollMoonshotChangelog(seenSet)
-      .catch(e => { console.error("news moonshot", e); return [] as Candidate[]; });
+    const initialSeen = new Set(seenSet);
+    const hfPending = pollHF().then(
+      value => ({ value }),
+      error => ({ error }),
+    );
+    const [sm, mc] = await Promise.all([
+      pollSitemaps(seenSet),
+      pollMoonshotChangelog(seenSet)
+        .catch(e => { console.error("news moonshot", e); return [] as Candidate[]; }),
+    ]);
     // seeding mutates seenSet even when nothing is emitted — persist it
-    await locked(async () => {
-      const cur = await ensureLoaded();
-      cur.seen = mergeSeen(cur.seen, seenSet);
-      await save();
-    });
-    await ingest([...(await pollHF()), ...sm, ...mc]);
+    const seedChanged = seenSet.size !== initialSeen.size
+      || [...seenSet].some(id => !initialSeen.has(id));
+    if (seedChanged) {
+      await locked(async () => {
+        const cur = await ensureLoaded();
+        cur.seen = mergeSeen(cur.seen, seenSet);
+        await save();
+      });
+    }
+    const hf = await hfPending;
+    if ("error" in hf) throw hf.error;
+    await ingest([...hf.value, ...sm, ...mc]);
   });
   // active outages lead; everything else newest-first; a flapping incident
   // could otherwise repeat an id, which would crash the keyed {#each}

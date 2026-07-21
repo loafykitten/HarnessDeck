@@ -18,6 +18,8 @@ export const api = {
   projectStack: (name: string) =>
     j<ProjectStack>(`/api/projects/${encodeURIComponent(name)}/stack`),
   sessions: () => j<SessionInfo[]>("/api/sessions"),
+  sessionAlive: (id: string) =>
+    j<{ alive: boolean }>(`/api/sessions/${encodeURIComponent(id)}/alive`),
   harnesses: () => j<HarnessMeta[]>("/api/harnesses"),
   createSession: (project: string, name: string, harness: HarnessId) =>
     j<{ id: string }>("/api/sessions", {
@@ -26,7 +28,7 @@ export const api = {
       body: JSON.stringify({ project, name, harness }),
     }),
   setCodexMode: (mode: CodexMode) =>
-    j<{ mode: CodexMode }>("/api/codex/mode", {
+    j<{ mode: CodexMode; configText: string }>("/api/codex/mode", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ mode }),

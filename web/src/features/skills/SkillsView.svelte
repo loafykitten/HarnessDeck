@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { api } from "../../lib/api";
   import { fmtAgo } from "../../utils/format";
   import type { HarnessId, SkillDetail, SkillSummary } from "../../types/api";
@@ -49,6 +50,13 @@
   let genPrompt = $state("");
   let genJob = $state<string | null>(null);
   let genMsg = $state<{ ok: boolean; msg: string } | null>(null);
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let destroyed = false;
+
+  onDestroy(() => {
+    destroyed = true;
+    if (pollTimer) clearInterval(pollTimer);
+  });
 
   const routeName = $derived(app.route.view === "skills" ? app.route.name : undefined);
 
@@ -65,9 +73,15 @@
 
   async function openSkill(name: string) {
     if (detail?.name === name) return;
+    // guard here, before detail is replaced — the skillMd fast path below
+    // never reaches pickFile's confirm
+    if (fileDirty && !confirm("Discard unsaved changes?")) return;
     try {
       detail = await api.skill(name);
-      await pickFile("SKILL.md");
+      openFile = "SKILL.md";
+      fileDirty = false;
+      if (detail.skillMd !== undefined) fileText = detail.skillMd;
+      else await pickFile("SKILL.md");
     } catch {
       navigate({ view: "skills" });
     }
@@ -141,11 +155,13 @@
   }
 
   function poll(id: string) {
-    const t = setInterval(async () => {
+    pollTimer = setInterval(async () => {
       try {
         const job = await api.skillJob(id);
+        if (destroyed) return;
         if (job.status === "running") return;
-        clearInterval(t);
+        clearInterval(pollTimer!);
+        pollTimer = null;
         genJob = null;
         if (job.status === "done") {
           genMsg = { ok: true, msg: `"${job.skillName}" created` };
@@ -156,7 +172,9 @@
           genMsg = { ok: false, msg: job.error ?? "generation failed" };
         }
       } catch {
-        clearInterval(t);
+        if (destroyed) return;
+        clearInterval(pollTimer!);
+        pollTimer = null;
         genJob = null;
         genMsg = { ok: false, msg: "lost track of the job" };
       }

@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { DEV_DIR, listSessions } from "../terminal/sessions";
+import { DEV_DIR, listSessionsBase } from "../terminal/sessions";
 
 const CLAUDE_PROJECTS = join(homedir(), ".claude", "projects");
 
@@ -42,13 +42,29 @@ async function git(dir: string, ...args: string[]): Promise<string | null> {
 // project per poll — git state moves slowly, serve it from a short-lived cache
 const GIT_TTL = 30_000;
 const gitCache = new Map<string, { at: number; info: Project["git"] }>();
+const gitRefreshes = new Map<string, Promise<Project["git"]>>();
+
+function refreshProjectGit(dir: string): Promise<Project["git"]> {
+  const active = gitRefreshes.get(dir);
+  if (active) return active;
+  const refresh = projectGit(dir).then(info => {
+    gitCache.set(dir, { at: Date.now(), info });
+    return info;
+  });
+  gitRefreshes.set(dir, refresh);
+  const clear = () => { if (gitRefreshes.get(dir) === refresh) gitRefreshes.delete(dir); };
+  refresh.then(clear, clear);
+  return refresh;
+}
 
 async function projectGitCached(dir: string): Promise<Project["git"]> {
   const hit = gitCache.get(dir);
   if (hit && Date.now() - hit.at < GIT_TTL) return hit.info;
-  const info = await projectGit(dir);
-  gitCache.set(dir, { at: Date.now(), info });
-  return info;
+  if (hit) {
+    void refreshProjectGit(dir).catch(() => {});
+    return hit.info;
+  }
+  return refreshProjectGit(dir);
 }
 
 async function projectGit(dir: string): Promise<Project["git"]> {
@@ -80,6 +96,26 @@ async function projectGit(dir: string): Promise<Project["git"]> {
   };
 }
 
+const TRANSCRIPT_TTL = 30_000;
+const transcriptCache = new Map<string, { at: number; lastActivity: number | null }>();
+
+async function transcriptActivityCached(dir: string): Promise<number | null> {
+  const hit = transcriptCache.get(dir);
+  if (hit && Date.now() - hit.at < TRANSCRIPT_TTL) return hit.lastActivity;
+  let lastActivity: number | null = null;
+  try {
+    const tdir = join(CLAUDE_PROJECTS, transcriptSlug(dir));
+    const files = (await readdir(tdir)).filter(f => f.endsWith(".jsonl"));
+    const stats = await Promise.all(files.map(f => stat(join(tdir, f)).catch(() => null)));
+    for (const s of stats) {
+      if (!s) continue;
+      if (lastActivity === null || s.mtimeMs > lastActivity) lastActivity = s.mtimeMs;
+    }
+  } catch { /* never touched by claude — fine */ }
+  transcriptCache.set(dir, { at: Date.now(), lastActivity });
+  return lastActivity;
+}
+
 export async function listProjects(): Promise<Project[]> {
   let entries;
   try {
@@ -87,21 +123,13 @@ export async function listProjects(): Promise<Project[]> {
   } catch {
     return [];
   }
-  const sessions = await listSessions();
+  const sessions = await listSessionsBase();
   const projects = await Promise.all(entries
     .filter(e => e.isDirectory() && !e.name.startsWith("."))
     .map(async e => {
       const dir = join(DEV_DIR, e.name);
       const gitInfo = projectGitCached(dir);
-      let lastActivity: number | null = null;
-      try {
-        const tdir = join(CLAUDE_PROJECTS, transcriptSlug(dir));
-        for (const f of await readdir(tdir)) {
-          if (!f.endsWith(".jsonl")) continue;
-          const s = await stat(join(tdir, f));
-          if (lastActivity === null || s.mtimeMs > lastActivity) lastActivity = s.mtimeMs;
-        }
-      } catch { /* never touched by claude — fine */ }
+      let lastActivity = await transcriptActivityCached(dir);
       const running = sessions
         .filter(s => s.project === e.name)
         .map(s => ({ id: s.id, name: s.name, activity: s.activity, harness: s.harness }));

@@ -22,12 +22,13 @@ interface Cache<T> { at: number; data: T | null }
 const limitsCache: Cache<CodexLimits> = { at: 0, data: null };
 const monthCache: Cache<MonthUsage> = { at: 0, data: null };
 const spendCache: Cache<CodexSpend> = { at: 0, data: null };
+let limitsInFlight: Promise<CodexLimits> | null = null;
+let monthInFlight: Promise<MonthUsage> | null = null;
+let spendInFlight: Promise<CodexSpend> | null = null;
 
-export function invalidateCodexCaches() {
-  limitsCache.at = 0;
-  monthCache.at = 0;
-  spendCache.at = 0;
-}
+const rolloutMemo = new Map<string, { mtimeMs: number; hasSnapshot: boolean }>();
+const parsedRollouts = new Map<string, { mtimeMs: number; data: CodexLimits }>();
+const ROLLOUT_TAIL_BYTES = 256 * 1024;
 
 /** Newest-first rollout files: sessions/<yyyy>/<mm>/<dd>/rollout-<ts>-…jsonl —
     both the date dirs and the file names sort lexicographically. */
@@ -60,55 +61,154 @@ async function newestSessionFiles(limit: number): Promise<string[]> {
 const epochToIso = (sec: unknown) =>
   typeof sec === "number" && sec > 0 ? new Date(sec * 1000).toISOString() : null;
 
-export async function getCodexLimits(): Promise<CodexLimits> {
-  if (limitsCache.data && Date.now() - limitsCache.at < 60_000) return limitsCache.data;
+async function grepSnapshotFiles(files: string[], strict = false): Promise<Set<string>> {
+  if (files.length === 0) return new Set();
+  const p = Bun.spawn(["grep", "-l", '"used_percent"', ...files], { stdout: "pipe", stderr: "ignore" });
+  const hitPaths = (await new Response(p.stdout).text()).trim().split("\n").filter(Boolean);
+  const code = await p.exited;
+  if (strict && code > 1) throw new Error(`grep failed with exit code ${code}`);
+  return new Set(hitPaths);
+}
+
+function parseLastSnapshot(text: string): CodexLimits | null {
+  // last snapshot in the file wins
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes('"used_percent"')) continue;
+    try {
+      const j = JSON.parse(lines[i]);
+      const rl = j.payload?.rate_limits;
+      if (!rl?.primary && !rl?.secondary) continue;
+      // assign by window length, not position: 300min = 5h, 10080min = 7d
+      const windows = [rl.primary, rl.secondary].filter(Boolean);
+      const five = windows.find((w: any) => w.window_minutes <= 600);
+      const week = windows.find((w: any) => w.window_minutes > 600);
+      return {
+        fiveHour: { pct: five?.used_percent ?? null, resetsAt: epochToIso(five?.resets_at) },
+        weekly: { pct: week?.used_percent ?? null, resetsAt: epochToIso(week?.resets_at) },
+        asOf: j.timestamp ?? null,
+      };
+    } catch { /* malformed line — keep scanning */ }
+  }
+  return null;
+}
+
+async function readLatestSnapshot(file: string, mtimeMs: number): Promise<CodexLimits | null> {
+  const parsed = parsedRollouts.get(file);
+  if (parsed?.mtimeMs === mtimeMs) return parsed.data;
+  const source = Bun.file(file);
+  const start = Math.max(0, source.size - ROLLOUT_TAIL_BYTES);
+  let tail = await source.slice(start).text();
+  if (start > 0) {
+    const firstBreak = tail.indexOf("\n");
+    tail = firstBreak === -1 ? "" : tail.slice(firstBreak + 1);
+  }
+  let data = parseLastSnapshot(tail);
+  if (!data && start > 0) data = parseLastSnapshot(await source.text());
+  if (data) parsedRollouts.set(file, { mtimeMs, data });
+  return data;
+}
+
+async function fullScanCodexLimits(files: string[], empty: CodexLimits): Promise<CodexLimits> {
+  const hitPaths = [...await grepSnapshotFiles(files)];
+  const hits = (await Promise.all(hitPaths.map(async f => ({
+    f, mtime: (await stat(f).catch(() => null))?.mtimeMs ?? 0,
+  })))).sort((a, b) => b.mtime - a.mtime);
+  for (const { f, mtime } of hits.slice(0, 3)) {
+    const data = parseLastSnapshot(await Bun.file(f).text().catch(() => ""));
+    if (data) {
+      parsedRollouts.set(f, { mtimeMs: mtime, data });
+      return data;
+    }
+  }
+  return empty;
+}
+
+async function computeCodexLimits(): Promise<CodexLimits> {
   const empty: CodexLimits = {
     fiveHour: { pct: null, resetsAt: null },
     weekly: { pct: null, resetsAt: null },
     asOf: null,
   };
-  // API-mode turns write null rate limits, so the newest file often has no
-  // snapshot at all — grep (arg order = newest first, so the first path
-  // printed wins) finds the freshest file that has one without reading
-  // hundreds of MB of rollouts into JS.
   const files = await newestSessionFiles(500);
-  if (files.length === 0) { limitsCache.at = Date.now(); limitsCache.data = empty; return empty; }
-  const p = Bun.spawn(["grep", "-l", '"used_percent"', ...files], { stdout: "pipe", stderr: "ignore" });
-  const hitPaths = (await new Response(p.stdout).text()).trim().split("\n").filter(Boolean);
-  await p.exited;
+  if (files.length === 0) {
+    rolloutMemo.clear();
+    parsedRollouts.clear();
+    limitsCache.at = Date.now();
+    limitsCache.data = empty;
+    return empty;
+  }
+  const window = new Set(files);
+  for (const file of rolloutMemo.keys()) {
+    if (!window.has(file)) {
+      rolloutMemo.delete(file);
+      parsedRollouts.delete(file);
+    }
+  }
+  const stats = await Promise.all(files.map(async file => ({
+    file,
+    value: await stat(file).catch(() => null),
+  })));
+  if (stats.some(entry => !entry.value)) {
+    const data = await fullScanCodexLimits(files, empty);
+    limitsCache.at = Date.now();
+    limitsCache.data = data;
+    return data;
+  }
+
+  const changed = stats.filter(({ file, value }) =>
+    rolloutMemo.get(file)?.mtimeMs !== value!.mtimeMs);
+  let changedHits: Set<string>;
+  try {
+    changedHits = await grepSnapshotFiles(changed.map(entry => entry.file), true);
+  } catch {
+    const data = await fullScanCodexLimits(files, empty);
+    limitsCache.at = Date.now();
+    limitsCache.data = data;
+    return data;
+  }
+  for (const { file, value } of changed) {
+    rolloutMemo.set(file, { mtimeMs: value!.mtimeMs, hasSnapshot: changedHits.has(file) });
+  }
+  if (stats.some(({ file }) => !rolloutMemo.has(file))) {
+    const data = await fullScanCodexLimits(files, empty);
+    limitsCache.at = Date.now();
+    limitsCache.data = data;
+    return data;
+  }
+
   // Rank hits by last-write time, not session creation: a long-running old
   // session can hold newer snapshots than a short newer one.
-  const hits = (await Promise.all(hitPaths.map(async f => ({
-    f, mtime: (await stat(f).catch(() => null))?.mtimeMs ?? 0,
-  })))).sort((a, b) => b.mtime - a.mtime).map(x => x.f);
-  for (const file of hits.slice(0, 3)) {
-    const text = await Bun.file(file).text().catch(() => "");
-    // last snapshot in the file wins
-    const lines = text.split("\n");
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (!lines[i].includes('"used_percent"')) continue;
-      try {
-        const j = JSON.parse(lines[i]);
-        const rl = j.payload?.rate_limits;
-        if (!rl?.primary && !rl?.secondary) continue;
-        // assign by window length, not position: 300min = 5h, 10080min = 7d
-        const windows = [rl.primary, rl.secondary].filter(Boolean);
-        const five = windows.find((w: any) => w.window_minutes <= 600);
-        const week = windows.find((w: any) => w.window_minutes > 600);
-        const data: CodexLimits = {
-          fiveHour: { pct: five?.used_percent ?? null, resetsAt: epochToIso(five?.resets_at) },
-          weekly: { pct: week?.used_percent ?? null, resetsAt: epochToIso(week?.resets_at) },
-          asOf: j.timestamp ?? null,
-        };
-        limitsCache.at = Date.now();
-        limitsCache.data = data;
-        return data;
-      } catch { /* malformed line — keep scanning */ }
+  const hits = stats
+    .filter(({ file }) => rolloutMemo.get(file)!.hasSnapshot)
+    .sort((a, b) => b.value!.mtimeMs - a.value!.mtimeMs);
+  for (const { file, value } of hits.slice(0, 3)) {
+    const data = await readLatestSnapshot(file, value!.mtimeMs).catch(() => null);
+    if (data) {
+      limitsCache.at = Date.now();
+      limitsCache.data = data;
+      return data;
     }
+  }
+  if (hits.length > 0) {
+    const data = await fullScanCodexLimits(files, empty);
+    limitsCache.at = Date.now();
+    limitsCache.data = data;
+    return data;
   }
   limitsCache.at = Date.now();
   limitsCache.data = empty;
   return empty;
+}
+
+export async function getCodexLimits(): Promise<CodexLimits> {
+  if (limitsCache.data && Date.now() - limitsCache.at < 60_000) return limitsCache.data;
+  if (limitsInFlight) return limitsInFlight;
+  const pending = computeCodexLimits();
+  limitsInFlight = pending;
+  const clear = () => { if (limitsInFlight === pending) limitsInFlight = null; };
+  pending.then(clear, clear);
+  return pending;
 }
 
 // ---------- this-month spend split by auth mode ----------
@@ -125,19 +225,22 @@ export interface CodexSpend {
 
 export async function getCodexSpend(): Promise<CodexSpend> {
   if (spendCache.data && Date.now() - spendCache.at < 60_000) return spendCache.data;
-  try {
-    return await computeSpend();
-  } catch (e) {
+  if (spendInFlight) return spendInFlight;
+  const pending = computeSpend().catch(e => {
     if (spendCache.data) return spendCache.data; // serve stale over failing
     throw e;
-  }
+  });
+  spendInFlight = pending;
+  const clear = () => { if (spendInFlight === pending) spendInFlight = null; };
+  pending.then(clear, clear);
+  return pending;
 }
 
 async function computeSpend(): Promise<CodexSpend> {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const p = Bun.spawn(
-    ["bunx", "ccusage", "codex", "session", "--json"],
+    ["bunx", "ccusage", "codex", "session", "--since", localYmd(start).replaceAll("-", ""), "--json"],
     { stdout: "pipe", stderr: "ignore" },
   );
   const out = await new Response(p.stdout).text();
@@ -168,12 +271,15 @@ const localYmd = (d: Date) =>
 
 export async function getCodexMonth(): Promise<MonthUsage> {
   if (monthCache.data && Date.now() - monthCache.at < 60_000) return monthCache.data;
-  try {
-    return await computeMonth();
-  } catch (e) {
+  if (monthInFlight) return monthInFlight;
+  const pending = computeMonth().catch(e => {
     if (monthCache.data) return monthCache.data; // serve stale over failing
     throw e;
-  }
+  });
+  monthInFlight = pending;
+  const clear = () => { if (monthInFlight === pending) monthInFlight = null; };
+  pending.then(clear, clear);
+  return pending;
 }
 
 async function computeMonth(): Promise<MonthUsage> {
@@ -182,7 +288,7 @@ async function computeMonth(): Promise<MonthUsage> {
   // subscription concept; codex bills separately, so calendar month it is)
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const p = Bun.spawn(
-    ["bunx", "ccusage", "codex", "daily", "--json"],
+    ["bunx", "ccusage", "codex", "daily", "--since", localYmd(start).replaceAll("-", ""), "--json"],
     { stdout: "pipe", stderr: "ignore" },
   );
   const out = await new Response(p.stdout).text();

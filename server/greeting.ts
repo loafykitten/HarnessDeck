@@ -22,7 +22,20 @@ const WEATHER_CODES: Record<number, string> = {
 };
 
 interface WeatherInfo { text: string; tempF: number; place: string }
+interface Geocode { lat: string; lon: string; place: string }
 let weatherCache: { at: number; zip: string; data: WeatherInfo | null } = { at: 0, zip: "", data: null };
+const geocodeCache = new Map<string, { at: number; data: Geocode }>();
+
+async function getGeocode(zip: string): Promise<Geocode | null> {
+  const hit = geocodeCache.get(zip);
+  if (hit && Date.now() - hit.at < 24 * 60 * 60_000) return hit.data;
+  const geo = await (await fetch(`https://api.zippopotam.us/us/${encodeURIComponent(zip)}`)).json();
+  const place = geo.places?.[0];
+  if (!place) return null;
+  const data = { lat: place.latitude, lon: place.longitude, place: place["place name"] };
+  geocodeCache.set(zip, { at: Date.now(), data });
+  return data;
+}
 
 async function getWeather(zip: string): Promise<WeatherInfo | null> {
   if (!zip) return null;
@@ -30,19 +43,17 @@ async function getWeather(zip: string): Promise<WeatherInfo | null> {
     return weatherCache.data;
   }
   try {
-    const geo = await (await fetch(`https://api.zippopotam.us/us/${encodeURIComponent(zip)}`)).json();
-    const place = geo.places?.[0];
-    if (!place) return null;
-    const lat = place.latitude, lon = place.longitude;
+    const geo = await getGeocode(zip);
+    if (!geo) return null;
     const wx = await (await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      `https://api.open-meteo.com/v1/forecast?latitude=${geo.lat}&longitude=${geo.lon}` +
       `&current=temperature_2m,weather_code&temperature_unit=fahrenheit`,
     )).json();
     const cur = wx.current;
     const data: WeatherInfo = {
       tempF: Math.round(cur.temperature_2m),
       text: WEATHER_CODES[cur.weather_code] ?? "weather unknown",
-      place: place["place name"],
+      place: geo.place,
     };
     weatherCache = { at: Date.now(), zip, data };
     return data;
