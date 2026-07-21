@@ -176,7 +176,7 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 
 @media (prefers-reduced-motion:reduce){
   .bg,.orb,.crt,.glow::before,.bar i::before,.bar-glow,.bar-glow::before,
-  .live-dot,.mini-dot.on,.tdot,.stat-big,.tk-track,.tk-dot.outage,
+  .live-dot,.mini-dot.on,.tdot,.stat-big,.tk-dot.outage,
   .mascot-roller,.mascot-wheel,.mascot-bubble,.mascot-hopper,.mascot-glyph{animation:none !important}
   .bar i,.bar-glow,.arc,.arc-glow{transition:none !important}
 }
@@ -590,10 +590,9 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
 .tk-view{flex:1;min-width:0;overflow:hidden;align-self:stretch;
   -webkit-mask-image:linear-gradient(90deg,transparent,#000 26px,#000 calc(100% - 26px),transparent);
   mask-image:linear-gradient(90deg,transparent,#000 26px,#000 calc(100% - 26px),transparent)}
-.tk-track{display:flex;align-items:center;height:100%;width:max-content;will-change:transform;
-  animation:tkmove var(--tk-dur,60s) linear infinite}
-.tk-view:hover .tk-track{animation-play-state:paused}
-@keyframes tkmove{to{transform:translateX(-50%)}}
+/* crawl transform is driven by rAF in NewsTicker.svelte (pixel-continuous
+   across content swaps; pauses on hover) */
+.tk-track{display:flex;align-items:center;height:100%;width:max-content;will-change:transform}
 .tk-group{display:flex;align-items:center;height:100%}
 .tk-item{display:inline-flex;align-items:center;gap:10px;padding:0 16px;height:100%;
   color:var(--ink-dim);text-decoration:none;font-size:12.5px;white-space:nowrap;transition:color .15s}

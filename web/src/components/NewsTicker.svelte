@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { app } from "../lib/state.svelte";
-  import { fmtAgo, type NewsVendor } from "../lib/api";
+  import { fmtAgo, type NewsItem, type NewsVendor } from "../lib/api";
 
   const VENDOR_LABEL: Record<NewsVendor, string> = {
     anthropic: "Anthropic", openai: "OpenAI", zai: "Z.ai",
@@ -8,14 +9,62 @@
   };
 
   let open = $state(false);
-  const items = $derived(app.news?.items ?? []);
+  // Freeze the crawl (and its content — a 60s poll can prepend items) while
+  // the pointer is anywhere on the bar, so the link the user is aiming at
+  // never moves. Resuming waits a beat: slipping off an item's edge for a
+  // moment shouldn't yank the target away mid-aim.
+  let paused = $state(false);
+  let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+  function pause() { clearTimeout(resumeTimer); paused = true; }
+  function unpause() {
+    clearTimeout(resumeTimer);
+    resumeTimer = setTimeout(() => { paused = false; }, 300);
+  }
+  let items = $state<NewsItem[]>([]);
+  $effect(() => {
+    const next = app.news?.items ?? [];
+    if (!paused) items = next;
+  });
   // a sparse list leaves a dead gap in the loop — repeat until a group is
   // comfortably wider than any viewport
   const loop = $derived(
     items.length ? Array.from({ length: Math.max(1, Math.ceil(10 / items.length)) }, () => items).flat() : [],
   );
-  // crawl speed scales with content so a short list doesn't whip past
-  const dur = $derived(Math.max(36, loop.length * 7));
+
+  // The crawl is a pixel-based rAF loop rather than a CSS keyframe animation:
+  // a keyframed translateX(-50%) re-times whenever content changes track
+  // width or duration, snapping the whole ticker by an arbitrary distance.
+  // Constant px/s is continuous across content swaps and hover pauses.
+  const SPEED = 34; // px/s
+  let track = $state<HTMLDivElement | undefined>();
+  let groupW = 0;
+  let offset = 0;
+
+  // Keep the loop-point width current (content swaps, font load, resizes).
+  $effect(() => {
+    const group = track?.firstElementChild as HTMLElement | undefined;
+    if (!group) return;
+    const ro = new ResizeObserver(() => { groupW = group.offsetWidth; });
+    ro.observe(group);
+    return () => ro.disconnect();
+  });
+
+  onMount(() => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let raf = 0;
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = Math.min(0.1, (now - last) / 1000); // clamp tab-switch gaps
+      last = now;
+      if (!paused && track && groupW > 0) {
+        offset = (offset + SPEED * dt) % groupW;
+        track.style.transform = `translate3d(${-offset}px,0,0)`;
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => { cancelAnimationFrame(raf); clearTimeout(resumeTimer); };
+  });
 
   function age(at: number): string {
     const s = Math.max(0, (Date.now() - at) / 1000);
@@ -26,13 +75,14 @@
 </script>
 
 {#if items.length}
-  <div class="tk glass">
+  <!-- svelte-ignore a11y_no_static_element_interactions -- hover-pause only, not interactive -->
+  <div class="tk glass" onpointerenter={pause} onpointerleave={unpause}>
     <button class="tk-cap" title="News history"
       onclick={e => { e.stopPropagation(); open = !open; }}>
       <span class="live-dot"></span> Wire <span class="tk-chev" class:up={open}>▾</span>
     </button>
     <div class="tk-view">
-      <div class="tk-track" style="--tk-dur:{dur}s">
+      <div class="tk-track" bind:this={track}>
         <!-- two identical groups so the -50% translate loops seamlessly -->
         {#each [0, 1] as copy (copy)}
           <div class="tk-group" aria-hidden={copy === 1}>
