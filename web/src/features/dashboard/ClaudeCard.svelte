@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from "../../stores/state.svelte";
-  import { fmtClock, fmtDate, fmtTokens, fmtUSD } from "../../utils/format";
+  import { fmtAgo, fmtClock, fmtDate, fmtTokens, fmtUSD } from "../../utils/format";
   import { clampPct, remaining } from "./format";
   import UsageRing from "./UsageRing.svelte";
   import BurnChart from "./BurnChart.svelte";
@@ -10,6 +10,15 @@
   const fivePct = $derived(clampPct(app.usage?.limits?.fiveHour?.pct));
   const weekPct = $derived(clampPct(app.usage?.limits?.weekly?.pct));
   const modelPct = $derived(clampPct(app.usage?.limits?.weeklyModel?.pct));
+
+  const fiveResets = $derived(app.usage?.limits?.fiveHour?.resetsAt ?? null);
+  // Dead sign-in won't self-heal — distinct from ordinary staleness.
+  const authExpired = $derived(!!app.usage?.limits?.authExpired);
+  // Stale when the server flags cached data, or when the window it describes
+  // already elapsed — either way the live-looking "~0m remaining" would lie.
+  const stale = $derived(
+    !!app.usage?.limits?.stale ||
+    (fiveResets != null && new Date(fiveResets).getTime() < Date.now()));
 </script>
 
 <div class="glass glow card harness-card">
@@ -29,8 +38,16 @@
         <h3>5-hour block</h3>
         <div class="big">Current window</div>
         <div class="meta">
-          Resets <em>{fmtClock(app.usage?.limits?.fiveHour?.resetsAt ?? null)}</em><br>
-          {remaining(app.usage?.limits?.fiveHour?.resetsAt ?? null)}
+          {#if authExpired}
+            <span class="stale">sign-in expired — run <code>claude</code> to reauthenticate</span>
+          {:else if stale}
+            <span class="stale">{app.usage?.limits?.fetchedAt
+              ? `data from ${fmtAgo(new Date(app.usage.limits.fetchedAt).getTime())} — reconnecting`
+              : "reconnecting…"}</span>
+          {:else}
+            Resets <em>{fmtClock(fiveResets)}</em><br>
+            {remaining(fiveResets)}
+          {/if}
         </div>
       </div>
     </div>

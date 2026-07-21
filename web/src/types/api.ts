@@ -39,6 +39,9 @@ export interface Usage {
     weekly: { pct: number | null; resetsAt: string | null };
     weeklyModel: { pct: number; model: string } | null;
     plan: { label: string; renewsAt: string | null };
+    fetchedAt: string;
+    stale?: boolean;
+    authExpired?: boolean;
   } | null;
   month: MonthUsage | null;
   codex: {

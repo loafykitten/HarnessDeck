@@ -25,6 +25,11 @@ export const usageRoutes: RouteHandler = async (req, url) => {
       },
       errors: [
         ...(limits.status === "rejected" ? [`limits: ${limits.reason}`] : []),
+        ...(limits.status === "fulfilled" && limits.value?.authExpired
+          ? ["limits: Claude sign-in expired — run `claude` to reauthenticate"]
+          : limits.status === "fulfilled" && limits.value?.stale
+          ? [`limits: serving cached data from ${limits.value.fetchedAt ?? "unknown"} (${limits.value.staleReason ?? "stale"})`]
+          : []),
         ...(month.status === "rejected" ? [`month: ${month.reason}`] : []),
         ...(codexMonth.status === "rejected" ? [`codex: ${codexMonth.reason}`] : []),
       ],
