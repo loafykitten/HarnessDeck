@@ -6,6 +6,7 @@ import { listProjects } from "./projects";
 import { createSession, hasSession, killSession, listSessions, newlineIntoSession, typeIntoSession } from "./sessions";
 import { getLimits, getMonth, invalidateUsageCaches } from "./usage";
 import { getGreeting } from "./greeting";
+import { getNews } from "./news";
 import { updaters } from "./updates";
 import {
   getAppConfig, setAppConfig,
@@ -143,6 +144,10 @@ const server = Bun.serve<WsData>({
 
       if (pathname === "/api/greeting" && req.method === "GET") {
         return json(await getGreeting());
+      }
+
+      if (pathname === "/api/news" && req.method === "GET") {
+        return json(await getNews());
       }
 
       // ---- Harness self-updates (claude update / codex update) ----

@@ -49,6 +49,13 @@ export interface Usage {
   errors: string[];
 }
 export interface Greeting { salutation: string; weather: string | null; whimsy: string }
+export type NewsVendor = "anthropic" | "openai" | "zai" | "moonshot" | "deepseek";
+export type NewsKind = "release" | "outage" | "resolved" | "news";
+export interface NewsItem {
+  id: string; vendor: NewsVendor; kind: NewsKind;
+  headline: string; url: string; at: number;
+}
+export interface News { items: NewsItem[]; updatedAt: number | null }
 export interface UpdateJob {
   status: "running" | "done" | "error";
   startedAt: number; finishedAt: number | null;
@@ -100,6 +107,7 @@ export const api = {
     j<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   usage: () => j<Usage>("/api/usage"),
   greeting: () => j<Greeting>("/api/greeting"),
+  news: () => j<News>("/api/news"),
   updates: (force = false) => j<Updates>(`/api/updates${force ? "?refresh=1" : ""}`),
   applyUpdate: (harness: HarnessId) => j<UpdateJob>(`/api/updates/apply?harness=${harness}`, { method: "POST" }),
   appConfig: () => j<AppConfig>("/api/config/app"),

@@ -2,6 +2,7 @@
   import { app, startPolling } from "./lib/state.svelte";
   import { installHotkeys } from "./lib/hotkeys";
   import Rail from "./components/Rail.svelte";
+  import NewsTicker from "./components/NewsTicker.svelte";
   import Dashboard from "./components/Dashboard.svelte";
   import ProjectView from "./components/ProjectView.svelte";
   import ConfigView from "./components/ConfigView.svelte";
@@ -21,6 +22,8 @@
 
 <main class="main">
   <div class="inner">
+    <!-- outside the route {#if}: survives view switches, crawl never resets -->
+    <NewsTicker />
     {#if app.route.view === "dash"}
       <section class="screen"><Dashboard /></section>
     {:else if app.route.view === "project"}

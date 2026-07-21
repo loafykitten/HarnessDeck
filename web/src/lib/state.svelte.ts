@@ -1,4 +1,4 @@
-import { api, type Greeting, type HarnessId, type HarnessMeta, type ProjectInfo, type SessionInfo, type Updates, type Usage } from "./api";
+import { api, type Greeting, type HarnessId, type HarnessMeta, type News, type ProjectInfo, type SessionInfo, type Updates, type Usage } from "./api";
 import { chime } from "./sound";
 
 /** Fallback until GET /api/harnesses answers, so pickers render immediately. */
@@ -14,6 +14,7 @@ export const app = $state({
   harnesses: DEFAULT_HARNESSES,
   usage: null as Usage | null,
   greeting: null as Greeting | null,
+  news: null as News | null,
   updates: null as Updates | null,
   updateChecking: false,
   // finished-update chips retire at these times, per harness
@@ -146,6 +147,10 @@ export async function refreshGreeting() {
   try { app.greeting = await api.greeting(); } catch (e) { console.error("refreshGreeting", e); }
 }
 
+export async function refreshNews() {
+  try { app.news = await api.news(); } catch (e) { console.error("refreshNews", e); }
+}
+
 /** How long a finished `claude update` stays on the chip before it falls back
     to the plain version line. */
 export const JOB_DISPLAY_MS = 5 * 60_000;
@@ -230,10 +235,11 @@ export async function applyUpdate(h: HarnessId) {
 export function startPolling() {
   rememberProject(app.route);
   api.harnesses().then(h => { if (h.length) app.harnesses = h; }).catch(console.error);
-  refreshCore(); refreshUsage(); refreshGreeting(); refreshUpdate();
+  refreshCore(); refreshUsage(); refreshGreeting(); refreshUpdate(); refreshNews();
   setInterval(refreshCore, 5_000);
   setInterval(refreshUsage, 30_000); // server caches at 60s; 30s halves worst-case lag
   setInterval(refreshGreeting, 15 * 60_000);
+  setInterval(refreshNews, 60_000); // each poll also drives the server's tiered pollers
   setInterval(() => refreshUpdate(), 30 * 60_000);
   // returning to the tab (throttled timers) → catch up immediately
   document.addEventListener("visibilitychange", () => {
