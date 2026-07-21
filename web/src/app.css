@@ -503,8 +503,11 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
   background:var(--term-bar);
   border-color:var(--glass-brd-lit);
   box-shadow:0 0 20px -8px var(--shadow-lit);
+  padding-left:28px; /* content starts clear of the 20px nub; .tab's transition animates the scoot */
 }
-.tab.active::after{content:"";position:absolute;left:-1px;top:4px;bottom:4px;width:3px;border-radius:3px;
+/* fingernail nub: full height inside the border — outer corners match the tab's
+   12px radius (minus the 1px border) so it never pokes past the rounded frame */
+.tab.active::after{content:"";position:absolute;left:0;top:0;bottom:0;width:20px;border-radius:11px 0 0 11px;
   background:linear-gradient(180deg,var(--accent),var(--accent-2));
   box-shadow:0 0 10px rgba(var(--accent-rgb),.7)}
 .tab-info{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
@@ -701,7 +704,8 @@ h1,h2{text-shadow:0 0 14px var(--text-glow-strong),0 0 4px var(--text-glow)}
   .term-col{width:100%}
   .tab{min-width:0}
   .tab-meta,.tab-time{display:none}
-  .tab.active::after{left:9px;right:9px;top:auto;bottom:-1px;width:auto;height:3px;
+  .tab.active{padding-left:12px} /* no left nub here — indicator is the bottom bar */
+  .tab.active::after{left:9px;right:9px;top:auto;bottom:-1px;width:auto;height:3px;border-radius:3px;
     background:linear-gradient(90deg,var(--accent),var(--accent-2))}
   .tab .tab-x{opacity:1}
   .tab input{width:130px}
