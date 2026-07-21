@@ -62,8 +62,7 @@ button in the rail, persisted in localStorage (`cc-theme`):
 - **pink/red** (`crimson`) — dark neon/vaporwave
 - **aero** — light Frutiger Aero skeuomorphism: sky gradient + clouds + soap
   bubbles, white-gloss gel glass; CRT layers off (gloss/specular replaces
-  them); terminal stays dark ("deep-sea glass"). Reference mockup:
-  `drafts/design-aero.html`.
+  them); terminal stays dark ("deep-sea glass").
 
 Theme tokens added for aero (defaults preserve the dark themes byte-identical):
 `--num-hi` (numeral gradient start), `--gloss` (panel sheen), `--term-ink`
@@ -116,9 +115,9 @@ arbitrary code by design — it must never listen beyond 127.0.0.1.
 2. Round 2: 3 converged drafts (Polished Glass / Glow Maximal / Glass CRT),
    screenshot-verified and fixed. Winner: Glow Maximal dashboard + Glass CRT
    project view/terminal/plan card.
-3. **Final reference design: `drafts/design-final.html`** — implement the
-   Svelte app to match this file (both themes, all states). Round-1 drafts
-   archived in `drafts/archive/`; round-2 in `drafts/design-{1,2,3}.html`.
+3. Final reference design was `drafts/design-final.html`; the implemented
+   Svelte app is now the source of truth. All drafts and the brief were
+   removed after convergence (recoverable from git history).
 
 ## Milestones
 1. ✅ Design convergence (drafts → `drafts/design-final.html`)
