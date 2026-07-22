@@ -35,10 +35,22 @@
   padding-left:28px; /* content starts clear of the 20px nub; .tab's transition animates the scoot */
 }
 /* fingernail nub: full height inside the border — outer corners match the tab's
-   12px radius (minus the 1px border) so it never pokes past the rounded frame */
-.tab.active::after{content:"";position:absolute;left:0;top:0;bottom:0;width:20px;border-radius:11px 0 0 11px;
+   12px radius (minus the 1px border) so it never pokes past the rounded frame.
+   A real element (not ::after) so it can cycle like the dashboard bars: an
+   oversized palindromic gradient slides via transform (compositor-smooth in
+   WebKit), one 160px period per loop so the seam never shows; the glow is a
+   blurred ::before breathing via opacity, standing in for the old box-shadow */
+.tab-nub{position:absolute;left:0;top:0;bottom:0;width:20px;pointer-events:none}
+.tab-nub::before{content:"";position:absolute;inset:0;border-radius:11px 0 0 11px;
   background:linear-gradient(180deg,var(--accent),var(--accent-2));
-  box-shadow:0 0 10px rgba(var(--accent-rgb),.7)}
+  filter:blur(7px) saturate(1.4);
+  animation:nubbreathe 2s ease-in-out -1s infinite}
+.tab-nub i{position:absolute;inset:0;border-radius:11px 0 0 11px;overflow:hidden}
+.tab-nub i::before{content:"";position:absolute;left:0;right:0;top:-160px;height:calc(100% + 320px);
+  background:repeating-linear-gradient(180deg,var(--accent) 0,var(--accent-2) 80px,var(--accent) 160px);
+  animation:nubslide 3s linear infinite}
+@keyframes nubslide{to{transform:translate3d(0,160px,0)}}
+@keyframes nubbreathe{0%,100%{opacity:.5}50%{opacity:.95}}
 .tab-info{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
 .tab-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tab-meta{font-size:10.5px;color:var(--ink-faint)}

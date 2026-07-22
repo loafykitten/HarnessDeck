@@ -179,6 +179,7 @@
         role="tab" tabindex="0" aria-selected={s.id === activeId}
         onclick={() => selectTab(s.id)}
         onkeydown={(e) => e.key === "Enter" && selectTab(s.id)}>
+        {#if s.id === activeId}<span class="tab-nub" aria-hidden="true"><i></i></span>{/if}
         <span class="tdot {s.status}"></span>
         <span class="tab-info">
           <span class="tab-name">{s.name}</span>

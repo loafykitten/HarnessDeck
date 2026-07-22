@@ -30,8 +30,14 @@
   .tab{min-width:0}
   .tab-meta,.tab-time{display:none}
   .tab.active{padding-left:12px} /* no left nub here — indicator is the bottom bar */
-  .tab.active::after{left:9px;right:9px;top:auto;bottom:-1px;width:auto;height:3px;border-radius:3px;
-    background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+  .tab-nub{left:9px;right:9px;top:auto;bottom:-1px;width:auto;height:3px}
+  .tab-nub::before,.tab-nub i{border-radius:3px}
+  .tab-nub::before{background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+  /* horizontal variant of the cycling gradient for the bottom-bar indicator */
+  .tab-nub i::before{top:0;bottom:0;height:auto;left:-160px;right:auto;width:calc(100% + 320px);
+    background:repeating-linear-gradient(90deg,var(--accent) 0,var(--accent-2) 80px,var(--accent) 160px);
+    animation-name:nubslide-h}
+  @keyframes nubslide-h{to{transform:translate3d(160px,0,0)}}
   .tab .tab-x{opacity:1}
   .tab input{width:130px}
 }
