@@ -57,9 +57,36 @@ function refreshProjectGit(dir: string): Promise<Project["git"]> {
   return refresh;
 }
 
+/** Newest mtime among the .git sentinel files a commit/push/branch-switch
+    touches. Stats are microseconds vs milliseconds for forked git, so this
+    can run on every cache hit: a fresher mtime than the cache entry means
+    git state actually moved and the TTL should be skipped. Plain file edits
+    don't touch these (dirty counts ride the TTL), and worktree checkouts
+    (.git is a file) degrade to plain TTL behavior. */
+async function gitStamp(dir: string, branch?: string): Promise<number> {
+  const paths = [
+    join(dir, ".git", "HEAD"),
+    join(dir, ".git", "index"),
+    join(dir, ".git", "packed-refs"),
+  ];
+  if (branch) {
+    paths.push(join(dir, ".git", "refs", "heads", branch));
+    // a push writes the loose remote-tracking ref even when it was packed;
+    // upstreams not named origin fall back to the TTL
+    paths.push(join(dir, ".git", "refs", "remotes", "origin", branch));
+  }
+  const stats = await Promise.all(paths.map(p => stat(p).catch(() => null)));
+  let latest = 0;
+  for (const s of stats) if (s && s.mtimeMs > latest) latest = s.mtimeMs;
+  return latest;
+}
+
 async function projectGitCached(dir: string): Promise<Project["git"]> {
   const hit = gitCache.get(dir);
-  if (hit && Date.now() - hit.at < GIT_TTL) return hit.info;
+  if (hit && Date.now() - hit.at < GIT_TTL) {
+    if (await gitStamp(dir, hit.info?.branch) <= hit.at) return hit.info;
+    return refreshProjectGit(dir); // git moved — serve fresh, not stale-while-revalidate
+  }
   if (hit) {
     void refreshProjectGit(dir).catch(() => {});
     return hit.info;
