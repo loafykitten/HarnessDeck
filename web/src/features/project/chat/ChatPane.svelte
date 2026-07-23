@@ -18,7 +18,7 @@
 
 <section class="chat-pane" class:active>
   <ChatHeader session={chat.session} {branch} connected={chat.connected} reconnecting={chat.reconnecting} />
-  <ChatFeed feed={chat.feed}
+  <ChatFeed feed={chat.feed} harness={chat.session?.harness ?? "claude"}
     permission={(id, behavior, always, message) => chat.respondPermission(id, behavior, always, message)}
     question={(id, answers) => chat.respondQuestion(id, answers)} />
   <Composer session={chat.session} status={chat.status} connected={chat.connected}

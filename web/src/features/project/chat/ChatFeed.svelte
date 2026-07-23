@@ -1,14 +1,16 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import type { ChatFeedItem } from "../../../types/chat";
+  import type { ChatFeedItem, ChatHarness } from "../../../types/chat";
   import FeedEntry from "./FeedEntry.svelte";
   import SubagentCard from "./SubagentCard.svelte";
 
-  let { feed, permission, question }: {
+  let { feed, permission, question, harness = "claude" }: {
     feed: ChatFeedItem[];
     permission: (id: string, behavior: "allow" | "deny", always?: boolean, message?: string) => void;
     question: (id: string, answers: Record<string, string[]>) => void;
+    harness?: ChatHarness;
   } = $props();
+  const agentLabel = $derived(harness === "codex" ? "Codex" : "Claude");
   let host: HTMLDivElement;
   let pinned = $state(true);
 
@@ -47,11 +49,11 @@
 <div class="chat-feed" bind:this={host}
   onscroll={() => pinned = host.scrollHeight - host.scrollTop - host.clientHeight < 80}>
   {#if feed.length === 0}
-    <div class="chat-welcome"><b>Start a conversation</b><span>Send a message to put a Claude agent to work in this project.</span></div>
+    <div class="chat-welcome"><b>Start a conversation</b><span>Send a message to put a {agentLabel} agent to work in this project.</span></div>
   {/if}
   {#each items as entry (entry.type === "item" ? entry.item.id : entry.id)}
     {#if entry.type === "item"}
-      <FeedEntry item={entry.item} {permission} {question} />
+      <FeedEntry item={entry.item} {permission} {question} {agentLabel} />
     {:else}
       <SubagentCard group={entry} {permission} {question} />
     {/if}

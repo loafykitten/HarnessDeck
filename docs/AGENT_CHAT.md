@@ -114,22 +114,26 @@ failed `turn/completed` both reported one failure). Protocol shapes, bypass
 gating, and project validation verified clean. UI screenshot pass: form,
 pickers, header, themes, claude regression all pass, zero console errors.
 
+**Post-quota retest + WebKit pass (2026-07-23)**: after Codex moved to API-key
+auth, the full live retest went green over the WS protocol (back-to-back fast
+tool-less turns — deadlock regression clean; approval allow ran the command,
+deny-with-message blocked it; effort=ultra on gpt-5.6-luna clamped instead of
+erroring; zero error events). WebKit pass done via Playwright's WebKit engine,
+headless (a real-Safari computer-use run wedged against the lock screen when
+the lid closed — don't schedule GUI-automation runs unattended): chat layout
+(no flex-collapse), backlog render, tool-card expand, and a live approval
+round trip all pass with zero console errors; real Safari verified the
+dashboard render before the run wedged. The pass caught one bug: codex replies
+were labeled "Claude" (hardcoded in FeedEntry/ChatFeed) — fixed, labels are
+harness-aware now.
+
 ## Open items
 
-1. **Codex live turns unverified post-fix.** The ChatGPT account hit its weekly
-   usage limit (resets Jul 28, 2026 ~5 PM) mid-verification, after the
-   implementation-phase WS smoke (streaming, approval allow/deny, resume) had
-   passed but before the browser pass could exercise approval cards or the
-   post-review lifecycle fixes against real turns. On quota return: one codex
-   chat in Sandbox — trivial prompt, approval allow + deny, a fast tool-less
-   turn (deadlock regression), an effort=ultra turn on gpt-5.6-luna (clamp).
-2. **Safari untested** — all verification was headless Chrome; no clipboard or
-   exotic APIs used, but give it a real WebKit pass.
-3. **Usage-RPC migration (separate pass)**: replace rollout-JSONL usage parsing
+1. **Usage-RPC migration (separate pass)**: replace rollout-JSONL usage parsing
    (`server/usage/codex-usage.ts`) with `account/rateLimits/read`, JWT
    plan-parsing with `account/read`, and the config.toml comment-toggling with
    `config/value/write`. Deliberately out of scope for chat.
-4. Deferred taste-notes from UI review (optional): pulsing dot on LIVE; eyeball
+2. Deferred taste-notes from UI review (optional): pulsing dot on LIVE; eyeball
    subagent-card nesting depth with real heavy content.
 
 ## Dev workflow

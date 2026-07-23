@@ -6,17 +6,18 @@
   import QuestionCard from "./QuestionCard.svelte";
   import ToolCard from "./ToolCard.svelte";
 
-  let { item, permission, question }: {
+  let { item, permission, question, agentLabel = "Claude" }: {
     item: ChatFeedItem;
     permission: (id: string, behavior: "allow" | "deny", always?: boolean, message?: string) => void;
     question: (id: string, answers: Record<string, string[]>) => void;
+    agentLabel?: string;
   } = $props();
   let thinkingOpen = $state(untrack(() => item.type === "thinking" && !!item.streaming));
 </script>
 
 {#if item.type === "message"}
   <article class="chat-message {item.role}">
-    <div class="message-role">{item.role === "user" ? "You" : "Claude"}</div>
+    <div class="message-role">{item.role === "user" ? "You" : agentLabel}</div>
     <Markdown text={item.text} />
   </article>
 {:else if item.type === "thinking"}
