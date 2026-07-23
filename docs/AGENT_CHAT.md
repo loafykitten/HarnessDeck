@@ -9,8 +9,8 @@ uncommitted on main.**_
 A per-project **Terminal / Chat** toggle in the project view. Chat sessions drive
 Claude programmatically via `@anthropic-ai/claude-agent-sdk`, or Codex via
 `codex app-server` (subscription auth; one harness subprocess per active session)
-— separate from tmux sessions, with their own tabs, persisted per project in
-localStorage.
+— separate from tmux sessions, using sidebar session tabs that follow the
+Terminal / Chat mode toggle, with the mode persisted per project in localStorage.
 
 Claude is working end-to-end (verified live in Sandbox + headless Chrome, zero
 console errors): streamed replies, thinking collapsibles, expandable tool cards, subagent

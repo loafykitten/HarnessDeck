@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import "@xterm/xterm/css/xterm.css";
   import { app, navigate, projectSessions, refreshCore } from "../../stores/state.svelte";
+  import { getChatSessionsStore, projectMode, setProjectMode } from "../../stores/chatSessions.svelte";
   import { api } from "../../lib/api";
   import { fmtAgo } from "../../utils/format";
   import type { HarnessId } from "../../types/api";
@@ -13,18 +14,39 @@
   let { project }: { project: string } = $props();
 
   const mySessions = $derived(projectSessions(project));
+  const chatSessions = $derived(getChatSessionsStore(project));
   const projInfo = $derived(app.projects.find(p => p.name === project));
+
+  // Mode is derived, not imperatively synced: a route session that belongs to
+  // either list wins (so deep links and hotkeys land in the right mode), the
+  // sticky per-project preference is only the fallback. An effect that flipped
+  // the store instead proved unreliable during the initial load cascade.
+  const columnMode = $derived.by(() => {
+    const routeSession = app.route.view === "project" ? app.route.session : undefined;
+    if (routeSession) {
+      if (mySessions.some(s => s.id === routeSession)) return "terminal";
+      if (chatSessions.sessions.some(s => s.id === routeSession)) return "chat";
+    }
+    return projectMode(project);
+  });
 
   // Which session tab is open. The route is the source of truth (hotkeys
   // cycle tabs by navigating); an invalid/absent route session → first tab.
   const activeId = $derived.by(() => {
     const routeSession = app.route.view === "project" ? app.route.session : undefined;
-    if (routeSession && mySessions.some(s => s.id === routeSession)) return routeSession;
-    return mySessions[0]?.id ?? null;
+    const sessions = columnMode === "chat" ? chatSessions.sessions : mySessions;
+    if (routeSession && sessions.some(s => s.id === routeSession)) return routeSession;
+    return sessions[0]?.id ?? null;
   });
 
   function selectTab(id: string) {
     navigate({ view: "project", name: project, session: id });
+  }
+
+  function selectMode(mode: "terminal" | "chat") {
+    if (mode === columnMode) return;
+    navigate({ view: "project", name: project });
+    setProjectMode(project, mode);
   }
 
   let naming = $state(false);
@@ -35,16 +57,19 @@
   let filesCollapsed = $state(localStorage.getItem("hd-files-collapsed") === "1");
   let fileTree = $state<{ refresh: () => Promise<void> } | null>(null);
   let refreshing = $state(false);
-  let columnMode = $state<"terminal" | "chat">("terminal");
 
   $effect(() => {
-    columnMode = localStorage.getItem(`hd-project-mode:${project}`) === "chat" ? "chat" : "terminal";
+    const routeSession = app.route.view === "project" ? app.route.session : undefined;
+    if (columnMode === "chat" || (routeSession && !mySessions.some(s => s.id === routeSession))) {
+      void untrack(() => chatSessions.load());
+    }
   });
 
-  function setColumnMode(mode: "terminal" | "chat") {
-    columnMode = mode;
-    localStorage.setItem(`hd-project-mode:${project}`, mode);
-  }
+  // Persist the effective mode so it sticks once the route no longer names a
+  // session (back from dashboard, mode toggle). No-ops on unchanged mode.
+  $effect(() => {
+    setProjectMode(project, columnMode);
+  });
 
   onMount(async () => {
     try { stack = (await api.projectStack(project)).stack; } catch { /* header works without stack metadata */ }
@@ -139,6 +164,11 @@
     await refreshCore();
   }
 
+  async function closeChat(id: string, name: string) {
+    if (!confirm(`Delete chat “${name}”? Its running agent will stop.`)) return;
+    await chatSessions.remove(id).catch(() => {});
+  }
+
   const activeSession = $derived(mySessions.find(s => s.id === activeId));
 
   const STATUS_LABEL = { working: "working", waiting: "needs you", idle: "idle" } as const;
@@ -185,46 +215,69 @@
 <div class="term-wrap">
   <div class="side-col" style:width="{sideWidth}px">
   <div class="tabs" role="tablist" aria-orientation="vertical">
-    {#each mySessions as s (s.id)}
-      <div class="tab" class:active={s.id === activeId}
-        role="tab" tabindex="0" aria-selected={s.id === activeId}
-        onclick={() => selectTab(s.id)}
-        onkeydown={(e) => e.key === "Enter" && selectTab(s.id)}>
-        {#if s.id === activeId}<span class="tab-nub" aria-hidden="true"><i></i></span>{/if}
-        <span class="tdot {s.status}"></span>
-        <span class="tab-info">
-          <span class="tab-name">{s.name}</span>
-          <span class="tab-meta"><span class="hx {s.harness}">{s.harness}</span> <span class="st {s.status}">{STATUS_LABEL[s.status]}</span></span>
-          <span class="tab-time">{fmtAgo(s.activity)}</span>
-        </span>
-        <span class="tab-x" role="button" tabindex="0" aria-label="Kill session"
-          onclick={(e) => { e.stopPropagation(); closeSession(s.id); }}
-          onkeydown={(e) => e.key === "Enter" && (e.stopPropagation(), closeSession(s.id))}>✕</span>
-      </div>
-    {/each}
-    {#if naming}
-      <div class="tab new naming">
-        <!-- svelte-ignore a11y_autofocus -->
-        <input autofocus placeholder="session name…" bind:value={newName}
-          onkeydown={namingKeydown}
-          onblur={() => { if (!creating) { naming = false; createError = ""; } }} />
-        <!-- mousedown-preventDefault keeps the input focused so its onblur
-             doesn't dismiss the form before the click lands -->
-        <div class="harness-pick" role="radiogroup" aria-label="Harness">
-          {#each app.harnesses as h (h.id)}
-            <button class="hopt" class:on={h.id === newHarness} role="radio" aria-checked={h.id === newHarness}
-              onmousedown={(e) => e.preventDefault()}
-              onclick={() => pickHarness(h.id)}>{h.label}</button>
-          {/each}
+    {#if columnMode === "chat"}
+      {#each chatSessions.sessions as s (s.id)}
+        <div class="tab" class:active={s.id === activeId}
+          role="tab" tabindex="0" aria-selected={s.id === activeId}
+          onclick={() => selectTab(s.id)}
+          onkeydown={(e) => e.key === "Enter" && selectTab(s.id)}>
+          {#if s.id === activeId}<span class="tab-nub" aria-hidden="true"><i></i></span>{/if}
+          <span class="tdot {s.status}"></span>
+          <span class="tab-info">
+            <span class="tab-name">{s.name}</span>
+            <span class="tab-meta"><span class="hx {s.harness}">{s.harness}</span> <span class="st {s.status}">{STATUS_LABEL[s.status]}</span></span>
+            <span class="tab-time">{fmtAgo(s.lastActivity)}</span>
+          </span>
+          <span class="tab-x" role="button" tabindex="0" aria-label={`Delete ${s.name}`}
+            onclick={(e) => { e.stopPropagation(); closeChat(s.id, s.name); }}
+            onkeydown={(e) => e.key === "Enter" && (e.stopPropagation(), closeChat(s.id, s.name))}>✕</span>
         </div>
-        <span class="hint">⇧⇥ switches harness</span>
-      </div>
-    {:else}
+      {/each}
       <div class="tab new" role="button" tabindex="0"
-        onclick={() => naming = true}
-        onkeydown={(e) => e.key === "Enter" && (naming = true)}>+ new session</div>
+        onclick={() => chatSessions.showForm = true}
+        onkeydown={(e) => e.key === "Enter" && (chatSessions.showForm = true)}>+ new chat</div>
+    {:else}
+      {#each mySessions as s (s.id)}
+        <div class="tab" class:active={s.id === activeId}
+          role="tab" tabindex="0" aria-selected={s.id === activeId}
+          onclick={() => selectTab(s.id)}
+          onkeydown={(e) => e.key === "Enter" && selectTab(s.id)}>
+          {#if s.id === activeId}<span class="tab-nub" aria-hidden="true"><i></i></span>{/if}
+          <span class="tdot {s.status}"></span>
+          <span class="tab-info">
+            <span class="tab-name">{s.name}</span>
+            <span class="tab-meta"><span class="hx {s.harness}">{s.harness}</span> <span class="st {s.status}">{STATUS_LABEL[s.status]}</span></span>
+            <span class="tab-time">{fmtAgo(s.activity)}</span>
+          </span>
+          <span class="tab-x" role="button" tabindex="0" aria-label="Kill session"
+            onclick={(e) => { e.stopPropagation(); closeSession(s.id); }}
+            onkeydown={(e) => e.key === "Enter" && (e.stopPropagation(), closeSession(s.id))}>✕</span>
+        </div>
+      {/each}
+      {#if naming}
+        <div class="tab new naming">
+          <!-- svelte-ignore a11y_autofocus -->
+          <input autofocus placeholder="session name…" bind:value={newName}
+            onkeydown={namingKeydown}
+            onblur={() => { if (!creating) { naming = false; createError = ""; } }} />
+          <!-- mousedown-preventDefault keeps the input focused so its onblur
+               doesn't dismiss the form before the click lands -->
+          <div class="harness-pick" role="radiogroup" aria-label="Harness">
+            {#each app.harnesses as h (h.id)}
+              <button class="hopt" class:on={h.id === newHarness} role="radio" aria-checked={h.id === newHarness}
+                onmousedown={(e) => e.preventDefault()}
+                onclick={() => pickHarness(h.id)}>{h.label}</button>
+            {/each}
+          </div>
+          <span class="hint">⇧⇥ switches harness</span>
+        </div>
+      {:else}
+        <div class="tab new" role="button" tabindex="0"
+          onclick={() => naming = true}
+          onkeydown={(e) => e.key === "Enter" && (naming = true)}>+ new session</div>
+      {/if}
+      {#if createError}<div class="tab" style="color:#ff5f57">{createError}</div>{/if}
     {/if}
-    {#if createError}<div class="tab" style="color:#ff5f57">{createError}</div>{/if}
   </div>
 
   {#if filesCollapsed}
@@ -254,12 +307,12 @@
   <div class="term-col">
     <div class="column-mode glass" role="group" aria-label="Project workspace mode">
       <button class:on={columnMode === "terminal"} aria-pressed={columnMode === "terminal"}
-        onclick={() => setColumnMode("terminal")}>Terminal</button>
+        onclick={() => selectMode("terminal")}>Terminal</button>
       <button class:on={columnMode === "chat"} aria-pressed={columnMode === "chat"}
-        onclick={() => setColumnMode("chat")}>Chat</button>
+        onclick={() => selectMode("chat")}>Chat</button>
     </div>
     {#if columnMode === "chat"}
-      <Chat {project} branch={projInfo?.git?.branch} />
+      <Chat {project} branch={projInfo?.git?.branch} {activeId} />
     {:else if mySessions.length > 0}
       <div class="glass term">
         <div class="term-bar">

@@ -1,8 +1,9 @@
 import { app, navigate, gotoProjects, projectSessions } from "../stores/state.svelte";
+import { getChatSessionsStore, projectMode } from "../stores/chatSessions.svelte";
 import { triggerSlopmaxx } from "../components/pets/mascot";
 
 // ⌃1 dashboard · ⌃2 projects (last active; press again to cycle, ⌃⇧2 backward)
-// ⌃3 skills · ⌃4 config · ⌃⇧[ / ⌃⇧] prev/next session tab · ⌃⇧S slopmaxx the mascot.
+// ⌃3 skills · ⌃4 config · ⌃⇧[ / ⌃⇧] prev/next visible session tab · ⌃⇧S slopmaxx the mascot.
 // Ctrl-combos deliberately: they reach us even with the terminal focused, and
 // neither macOS nor the browser reserves them (⌘1… switches browser tabs,
 // ⌃[ is ESC — both untouchable).
@@ -18,6 +19,14 @@ function cycleProject(dir: 1 | -1) {
 function cycleSession(dir: 1 | -1) {
   const route = app.route;
   if (route.view !== "project") return;
+  if (projectMode(route.name) === "chat") {
+    const sess = getChatSessionsStore(route.name).sessions;
+    if (sess.length < 2) return;
+    const cur = route.session && sess.some(s => s.id === route.session) ? route.session : sess[0].id;
+    const i = sess.findIndex(s => s.id === cur);
+    navigate({ view: "project", name: route.name, session: sess[(i + dir + sess.length) % sess.length].id });
+    return;
+  }
   const sess = projectSessions(route.name);
   if (sess.length < 2) return;
   const cur = route.session && sess.some(s => s.id === route.session) ? route.session : sess[0].id;

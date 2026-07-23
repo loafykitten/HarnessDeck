@@ -6,18 +6,6 @@
 
 .chat-shell{flex:1;min-height:0;overflow:hidden;border-radius:16px;display:flex;flex-direction:column}
 .screen.fill .term-col>.chat-shell{flex:1;min-height:0}
-.chat-tabs{display:flex;align-items:stretch;gap:5px;padding:7px 9px;border-bottom:1px solid var(--glass-brd);background:var(--term-bar);overflow-x:auto;flex:none}
-.chat-tab{display:flex;align-items:center;gap:7px;min-width:135px;max-width:220px;padding:7px 8px;border:1px solid transparent;border-radius:9px;color:var(--ink-dim);cursor:pointer}
-.chat-tab:hover{background:var(--glass);color:var(--ink)}
-.chat-tab.active{background:var(--glass-2);border-color:var(--glass-brd-lit);color:var(--ink);box-shadow:0 0 15px -9px var(--accent)}
-.chat-tab>span:nth-child(2){display:flex;flex-direction:column;min-width:0;flex:1}
-.chat-tab b{font:600 11.5px ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chat-tab small{font-size:9.5px;color:var(--ink-faint);white-space:nowrap}
-.chat-tab button{opacity:0;color:var(--ink-faint);padding:2px 4px;border-radius:5px}
-.chat-tab:hover button,.chat-tab button:focus-visible{opacity:1}
-.chat-tab button:hover{color:var(--bad);background:rgba(var(--bad-rgb),.12)}
-.chat-new{flex:none;color:var(--accent-2);font-size:11px;padding:5px 10px;border:1px dashed var(--glass-brd);border-radius:9px}
-.chat-new:hover{border-color:var(--accent-2);background:var(--glass)}
 
 .chat-pane{display:none;flex:1;min-height:0;flex-direction:column}
 .chat-pane.active{display:flex}
