@@ -61,6 +61,8 @@
   let filesError = $state("");
   let selectedIndex = $state(0);
   let fileRequest = 0;
+  let filesFailedAt = 0;
+  const FILE_RETRY_MS = 5_000;
   const canSend = $derived(connected && session !== null);
   const idlePlaceholder = $derived(session?.harness === "codex" ? "Message Codex…" : "Message Claude…");
   const mentionOpen = $derived(mentionStart !== null);
@@ -114,14 +116,19 @@
 
   async function loadFiles(): Promise<void> {
     if (filePaths.length || filesLoading) return;
+    if (filesFailedAt && Date.now() - filesFailedAt < FILE_RETRY_MS) return;
     const request = ++fileRequest;
     filesLoading = true;
     filesError = "";
     try {
       const paths = await projectFiles(project);
-      if (request === fileRequest && mentionOpen) filePaths = paths;
+      if (request === fileRequest && mentionOpen) {
+        filePaths = paths;
+        filesFailedAt = 0;
+      }
     } catch (error) {
       if (request === fileRequest && mentionOpen) {
+        filesFailedAt = Date.now();
         filesError = error instanceof Error ? error.message : "Could not load files";
       }
     } finally {
@@ -164,8 +171,10 @@
   async function selectPath(path: string): Promise<void> {
     if (mentionStart === null) return;
     const suffix = text.slice(mentionCaret).match(/^[^\s@]*/)?.[0] ?? "";
+    const remainder = text.slice(mentionCaret + suffix.length);
+    const pad = /^\s/.test(remainder) ? "" : " ";
     const caret = mentionStart + path.length + 2;
-    text = `${text.slice(0, mentionStart)}@${path} ${text.slice(mentionCaret + suffix.length)}`;
+    text = `${text.slice(0, mentionStart)}@${path}${pad}${remainder}`;
     closeMention();
     await tick();
     textarea.focus();
@@ -173,6 +182,7 @@
   }
 
   function keydown(event: KeyboardEvent): void {
+    if (event.isComposing) return; // don't hijack IME candidate commits
     if (mentionOpen) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -185,9 +195,15 @@
         return;
       }
       if (event.key === "Enter" || event.key === "Tab") {
-        event.preventDefault();
+        if (event.key === "Enter" && event.shiftKey) return; // newline falls through
         const path = matches[selectedIndex];
-        if (path) void selectPath(path);
+        if (!path) {
+          // no matches: Enter must not submit, but let Tab move focus normally
+          if (event.key === "Enter") event.preventDefault();
+          return;
+        }
+        event.preventDefault();
+        void selectPath(path);
         return;
       }
       if (event.key === "Escape") {
@@ -227,6 +243,7 @@
     {/if}
     <textarea rows="3" placeholder={status === "waiting" ? "Answer the request above or queue a message…" : status === "working" ? "Queue another message…" : idlePlaceholder}
       bind:this={textarea} value={text} oninput={input} onkeydown={keydown}
+      onblur={() => closeMention()}
       onclick={(event) => updateMention(event.currentTarget)}
       onkeyup={(event) => { if (!["ArrowUp", "ArrowDown", "Enter", "Tab", "Escape"].includes(event.key)) updateMention(event.currentTarget); }}
       aria-autocomplete="list" aria-controls={mentionOpen ? popupId : undefined}
