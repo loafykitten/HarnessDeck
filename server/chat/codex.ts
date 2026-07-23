@@ -227,8 +227,13 @@ class CodexChatHandle implements ChatHandle {
   respondPermission(id: string, response: PermissionResponse): void {
     const approval = this.pendingApprovals.get(id);
     if (!approval) return;
-    this.pendingApprovals.delete(id);
+    if (!this.pendingApprovals.delete(id)) return;
     approval.respond(response);
+    this.emit({
+      type: "request_resolved",
+      id,
+      outcome: response.behavior === "deny" ? "denied" : response.always ? "always-allowed" : "allowed",
+    });
     this.emit({
       type: "status",
       status: this.pendingApprovals.size ? "waiting" : this.activeTurnId ? "working" : "idle",
@@ -248,7 +253,7 @@ class CodexChatHandle implements ChatHandle {
 
   async interrupt(): Promise<void> {
     this.queue.length = 0;
-    this.denyPendingApprovals();
+    this.dismissPendingApprovals();
     const threadId = this.threadId;
     const turnId = this.activeTurnId;
     if (!threadId || !turnId) {
@@ -268,7 +273,7 @@ class CodexChatHandle implements ChatHandle {
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.queue.length = 0;
-    this.denyPendingApprovals();
+    this.dismissPendingApprovals();
     this.stopped = true;
     this.dead = true;
     if (this.interruptFallback) {
@@ -557,7 +562,7 @@ class CodexChatHandle implements ChatHandle {
     this.emit({ type: "result", costUsd: 0, usage: this.latestUsage, durationMs });
     if (this.activeTurnId === params.turn.id) this.activeTurnId = null;
     this.latestUsage = null;
-    this.denyPendingApprovals();
+    this.dismissPendingApprovals();
     this.emit({ type: "status", status: "idle" });
     if (this.queue.length) {
       this.emit({ type: "status", status: "working" });
@@ -668,11 +673,12 @@ class CodexChatHandle implements ChatHandle {
     });
   }
 
-  private denyPendingApprovals(): void {
-    for (const approval of this.pendingApprovals.values()) {
+  private dismissPendingApprovals(): void {
+    for (const [id, approval] of this.pendingApprovals) {
+      if (!this.pendingApprovals.delete(id)) continue;
       approval.respond({ behavior: "deny" });
+      this.emit({ type: "request_resolved", id, outcome: "dismissed" });
     }
-    this.pendingApprovals.clear();
   }
 
   private async consumeStderr(): Promise<void> {
@@ -695,7 +701,7 @@ class CodexChatHandle implements ChatHandle {
       : `codex app-server exited with code ${code}`);
     for (const request of this.pendingRpc.values()) request.reject(error);
     this.pendingRpc.clear();
-    this.pendingApprovals.clear();
+    this.dismissPendingApprovals();
     this.emit({ type: "error", message: error.message });
     this.emit({ type: "status", status: "idle" });
   }

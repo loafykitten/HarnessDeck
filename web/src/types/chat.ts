@@ -7,6 +7,7 @@ export type CodexChatEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ult
 export type ChatEffort = ClaudeChatEffort | CodexChatEffort;
 export type ChatPermissionMode = "default" | "plan" | "acceptEdits" | "bypassPermissions";
 export type ChatStatus = "working" | "waiting" | "idle";
+export type RequestOutcome = "answered" | "allowed" | "always-allowed" | "denied" | "dismissed";
 
 export const CHAT_MODELS = {
   claude: ["default", "fable", "opus", "sonnet", "haiku"],
@@ -48,6 +49,7 @@ export type ChatEvent = Sequenced & (
   | { type: "tool"; phase: "start" | "end"; id: string; name: string; input?: unknown; result?: unknown; isError?: boolean; parentToolUseId?: string }
   | { type: "permission_request"; id: string; toolName: string; input: Record<string, unknown>; suggestions?: unknown[] }
   | { type: "question_request"; id: string; questions: ChatQuestion[] }
+  | { type: "request_resolved"; id: string; outcome: RequestOutcome }
   | { type: "status"; status: ChatStatus }
   | { type: "result"; costUsd: number; usage: unknown; durationMs: number }
   | { type: "error"; message: string }

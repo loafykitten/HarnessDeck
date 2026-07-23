@@ -7,6 +7,7 @@ export type ClaudeChatEffort = "low" | "medium" | "high" | "xhigh" | "max";
 export type CodexChatEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 export type ChatEffort = ClaudeChatEffort | CodexChatEffort;
 export type ChatPermissionMode = "default" | "plan" | "acceptEdits" | "bypassPermissions";
+export type RequestOutcome = "answered" | "allowed" | "always-allowed" | "denied" | "dismissed";
 
 export interface ChatOptions {
   model: ChatModel;
@@ -45,6 +46,7 @@ export type DriverEvent =
   | { type: "tool"; phase: "start" | "end"; id: string; name: string; input?: unknown; result?: unknown; isError?: boolean; parentToolUseId?: string }
   | { type: "permission_request"; id: string; toolName: string; input: Record<string, unknown>; suggestions?: unknown[] }
   | { type: "question_request"; id: string; questions: ChatQuestion[] }
+  | { type: "request_resolved"; id: string; outcome: RequestOutcome }
   | { type: "status"; status: ChatStatus }
   | { type: "result"; costUsd: number; usage: unknown; durationMs: number }
   | { type: "error"; message: string };

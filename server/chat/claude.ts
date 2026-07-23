@@ -2,13 +2,11 @@ import { randomUUID } from "node:crypto";
 import {
   query,
   type CanUseTool,
-  type OnUserDialog,
   type PermissionResult,
   type PermissionUpdate,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
-  type UserDialogResult,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { AskUserQuestionOutput } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
 import type {
@@ -57,21 +55,12 @@ type PendingPermission = {
   suggestions?: PermissionUpdate[];
   resolve: (result: PermissionResult) => void;
 };
-type PendingToolQuestion = {
+type PendingQuestion = {
   kind: "question";
-  channel: "canUseTool";
   toolUseId: string;
   input: Record<string, unknown>;
   resolve: (result: PermissionResult) => void;
 };
-type PendingDialogQuestion = {
-  kind: "question";
-  channel: "request_user_dialog";
-  toolUseId?: string;
-  input: Record<string, unknown>;
-  resolve: (result: UserDialogResult) => void;
-};
-type PendingQuestion = PendingToolQuestion | PendingDialogQuestion;
 
 const parentId = (message: { parent_tool_use_id?: string | null }) =>
   message.parent_tool_use_id ?? undefined;
@@ -89,14 +78,6 @@ const contentText = (content: unknown): string => {
 
 const sdkQuestionAnswers = (answers: Record<string, string[]>): AskUserQuestionOutput["answers"] =>
   Object.fromEntries(Object.entries(answers).map(([question, values]) => [question, values.join(", ")]));
-
-const askUserQuestionOutput = (
-  input: Record<string, unknown>,
-  answers: Record<string, string[]>,
-): AskUserQuestionOutput => ({
-  questions: Array.isArray(input.questions) ? input.questions as AskUserQuestionOutput["questions"] : [],
-  answers: sdkQuestionAnswers(answers),
-});
 
 const chatDebug = (message: string): void => {
   if (process.env.HARNESSDECK_CHAT_DEBUG === "1") console.log(`[chat] ${message}`);
@@ -118,11 +99,13 @@ class ClaudeChatHandle implements ChatHandle {
       const id = randomUUID();
       return new Promise<PermissionResult>(resolve => {
         if (toolName === "AskUserQuestion") {
+          // The CLI uses permission_ask_user_question here; leaving it undeclared falls back to
+          // canUseTool with the full input. The old ask_user_question dialog kind does not exist,
+          // so that path never fired (verified against the live CLI).
           const questions = Array.isArray(input.questions) ? input.questions : [];
           chatDebug("AskUserQuestion via canUseTool");
           this.pending.set(id, {
             kind: "question",
-            channel: "canUseTool",
             toolUseId: context.toolUseID,
             input,
             resolve,
@@ -142,29 +125,7 @@ class ClaudeChatHandle implements ChatHandle {
         context.signal.addEventListener("abort", () => {
           if (!this.pending.delete(id)) return;
           resolve({ behavior: "deny", message: "Request interrupted", toolUseID: context.toolUseID });
-        }, { once: true });
-      });
-    };
-
-    const onUserDialog: OnUserDialog = async (request, context) => {
-      if (request.dialogKind !== "ask_user_question") return { behavior: "cancelled" };
-      const id = randomUUID();
-      const input = request.payload;
-      const questions = Array.isArray(input.questions) ? input.questions : [];
-      chatDebug(`AskUserQuestion via request_user_dialog (${request.dialogKind})`);
-      return new Promise<UserDialogResult>(resolve => {
-        this.pending.set(id, {
-          kind: "question",
-          channel: "request_user_dialog",
-          toolUseId: request.toolUseID,
-          input,
-          resolve,
-        });
-        this.emit({ type: "question_request", id, questions: questions as never[] });
-        this.emit({ type: "status", status: "waiting" });
-        context.signal.addEventListener("abort", () => {
-          if (!this.pending.delete(id)) return;
-          resolve({ behavior: "cancelled" });
+          this.emit({ type: "request_resolved", id, outcome: "dismissed" });
         }, { once: true });
       });
     };
@@ -182,8 +143,6 @@ class ClaudeChatHandle implements ChatHandle {
         includePartialMessages: true,
         forwardSubagentText: true,
         canUseTool,
-        onUserDialog,
-        supportedDialogKinds: ["ask_user_question"],
         resume: options.continuationId,
       },
     });
@@ -218,7 +177,7 @@ class ClaudeChatHandle implements ChatHandle {
   respondPermission(id: string, response: PermissionResponse): void {
     const request = this.pending.get(id);
     if (!request || request.kind !== "permission") return;
-    this.pending.delete(id);
+    if (!this.pending.delete(id)) return;
     if (response.behavior === "allow") {
       const updatedPermissions: PermissionUpdate[] | undefined = response.always
         ? request.suggestions?.length
@@ -245,23 +204,25 @@ class ClaudeChatHandle implements ChatHandle {
         decisionClassification: "user_reject",
       });
     }
+    this.emit({
+      type: "request_resolved",
+      id,
+      outcome: response.behavior === "deny" ? "denied" : response.always ? "always-allowed" : "allowed",
+    });
     this.emit({ type: "status", status: this.pending.size ? "waiting" : "working" });
   }
 
   respondQuestion(id: string, response: QuestionResponse): void {
     const request = this.pending.get(id);
     if (!request || request.kind !== "question") return;
-    this.pending.delete(id);
-    if (request.channel === "canUseTool") {
-      request.resolve({
-        behavior: "allow",
-        updatedInput: { ...request.input, answers: sdkQuestionAnswers(response.answers) },
-        toolUseID: request.toolUseId,
-        decisionClassification: "user_temporary",
-      });
-    } else {
-      request.resolve({ behavior: "completed", result: askUserQuestionOutput(request.input, response.answers) });
-    }
+    if (!this.pending.delete(id)) return;
+    request.resolve({
+      behavior: "allow",
+      updatedInput: { ...request.input, answers: sdkQuestionAnswers(response.answers) },
+      toolUseID: request.toolUseId,
+      decisionClassification: "user_temporary",
+    });
+    this.emit({ type: "request_resolved", id, outcome: "answered" });
     this.emit({ type: "status", status: this.pending.size ? "waiting" : "working" });
   }
 
@@ -291,14 +252,11 @@ class ClaudeChatHandle implements ChatHandle {
     if (this.interruptFallback) clearTimeout(this.interruptFallback);
     this.interruptFallback = null;
     this.input.end();
-    for (const request of this.pending.values()) {
-      if (request.kind === "question" && request.channel === "request_user_dialog") {
-        request.resolve({ behavior: "cancelled" });
-      } else {
-        request.resolve({ behavior: "deny", message: "Session stopped", toolUseID: request.toolUseId });
-      }
+    for (const [id, request] of this.pending) {
+      if (!this.pending.delete(id)) continue;
+      request.resolve({ behavior: "deny", message: "Session stopped", toolUseID: request.toolUseId });
+      this.emit({ type: "request_resolved", id, outcome: "dismissed" });
     }
-    this.pending.clear();
     this.sdk.close();
     this.emit({ type: "status", status: "idle" });
   }

@@ -13,7 +13,8 @@
   <div class="request-title"><span class="tdot waiting"></span><b>{toolName}</b> needs permission</div>
   <pre>{JSON.stringify(input, null, 2)}</pre>
   {#if resolved}
-    <div class="request-resolved" class:denied={resolved === "denied"}>{resolved}</div>
+    <div class="request-resolved" class:denied={resolved === "denied"}
+      class:dismissed={resolved === "dismissed"}>{resolved}</div>
   {:else if denying}
     <input aria-label="Reason for denial" placeholder="Optional message…" bind:value={message} />
     <div class="request-actions">

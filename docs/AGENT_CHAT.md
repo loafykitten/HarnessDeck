@@ -44,9 +44,10 @@ changes, and persisted `thread/resume` continuity.
   sessions *created* in skip-approvals mode may switch back into it later. The
   launch flag is keyed off the persisted capability (not current mode) so this
   survives restarts.
-- **AskUserQuestion** arrives via `canUseTool` on SDK 0.3.217; the
-  `onUserDialog` (`ask_user_question` dialog kind) handler is wired as
-  forward-compat for when the CLI moves it to the dialog channel.
+- **AskUserQuestion** arrives via `canUseTool` with the full tool input. The CLI's
+  actual dialog kind is `permission_ask_user_question`; the nonexistent
+  `ask_user_question` kind never fired. Resolutions return through the shared
+  `request_resolved` event so cards show the server-confirmed outcome.
 - **Answers wire format**: arrays per question on our WS protocol; comma-joined
   only at the SDK boundary (that's the SDK's own documented contract).
 - **`setChatOptions` mutates state only after the SDK call succeeds**; SDK

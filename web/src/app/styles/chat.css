@@ -67,17 +67,29 @@
 .approval-card input:focus,.question-card input:focus,.chat-new-form input:focus,.chat-new-form select:focus,.composer-options select:focus{border-color:var(--accent-2);box-shadow:0 0 12px -7px var(--accent-2)}
 .request-actions{display:flex;gap:7px;margin-top:10px}
 .request-actions button,.question-options button,.question-submit{padding:6px 10px;border-radius:8px;border:1px solid var(--glass-brd);background:var(--glass);font-size:11px;color:var(--ink-dim)}
-.request-actions button:hover,.question-options button:hover{border-color:var(--glass-brd-lit);color:var(--ink)}
+.request-actions button:hover,.question-options button:hover:not(:disabled){border-color:var(--glass-brd-lit);color:var(--ink)}
 .request-actions .allow{color:var(--ok);border-color:rgba(var(--ok-rgb),.4)}
 .request-actions .deny{color:var(--bad);border-color:rgba(var(--bad-rgb),.35)}
 .request-resolved{margin-top:9px;font:10px ui-monospace,monospace;color:var(--ok);text-transform:uppercase;letter-spacing:.08em}
 .request-resolved.denied{color:var(--bad)}
+.request-resolved.dismissed{color:var(--ink-faint)}
 .question-card{display:flex;flex-direction:column;gap:12px}
-.question-card fieldset{border:0;padding:0;margin:0}
+.question-card fieldset{min-width:0;border:0;padding:0;margin:0}
 .question-card legend{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--ink)}
-.question-card legend span{font:700 9px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.09em;color:var(--accent)}
-.question-options{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.question-card legend .question-header{font:700 9px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.09em;color:var(--accent)}
+.question-card legend .question-text{color:var(--ink)}
+.question-card legend small{font-size:10px;color:var(--ink-faint)}
+.question-options{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.question-options button{display:flex;width:100%;flex-direction:column;align-items:flex-start;gap:2px;text-align:left}
+.question-options button span{color:var(--ink-dim)}
+.question-options button small{font-size:11px;line-height:1.35;color:var(--ink-faint)}
 .question-options button.on{color:var(--ink);border-color:var(--accent);background:rgba(var(--accent-rgb),.14)}
+.question-options button.on span{color:var(--ink)}
+.question-card.resolved .question-options button{cursor:default}
+.question-card.resolved .question-options button:not(.on){opacity:.55}
+.question-card.resolved .question-options button.on{opacity:1}
+.option-preview-label{margin-top:8px;font-size:10px;color:var(--ink-faint)}
+.option-preview{box-sizing:border-box;width:100%;max-width:100%;max-height:240px;margin:8px 0 0;padding:9px;overflow:auto;border:1px solid var(--glass-brd);border-radius:8px;background:var(--glass);color:var(--ink-dim);font:11px/1.45 ui-monospace,monospace;white-space:pre}
 .question-submit{align-self:flex-start;color:var(--ok);border-color:rgba(var(--ok-rgb),.4)}
 .question-submit:disabled{opacity:.4;cursor:default}
 .chat-error{padding:8px 11px;border:1px solid rgba(var(--bad-rgb),.35);border-radius:9px;background:rgba(var(--bad-rgb),.08);color:var(--bad);font-size:11px}

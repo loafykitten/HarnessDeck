@@ -9,10 +9,18 @@ import type {
   ChatPermissionMode,
   ChatSession,
   ChatStatus,
+  RequestOutcome,
 } from "../types/chat";
 
 const stores = new Map<string, ChatConnection>();
 const SUSPEND_AFTER_MS = 60_000;
+const REQUEST_OUTCOME_LABELS: Record<RequestOutcome, string> = {
+  answered: "answered",
+  allowed: "allowed",
+  "always-allowed": "always allowed",
+  denied: "denied",
+  dismissed: "dismissed",
+};
 
 export class ChatConnection {
   feed = $state<ChatFeedItem[]>([]);
@@ -151,7 +159,7 @@ export class ChatConnection {
     if (this.session) this.session.status = status;
     if (previous === "waiting" && status !== "waiting") {
       for (const item of this.feed) {
-        if ((item.type === "permission" || item.type === "question") && !item.resolved) item.resolved = "answered";
+        if ((item.type === "permission" || item.type === "question") && !item.resolved) item.resolved = "dismissed";
       }
     }
     if (!this.replayingInit && previous === "working" && status !== "working" && (document.hidden || !this.active)) {
@@ -225,6 +233,12 @@ export class ChatConnection {
     } else if (event.type === "question_request") {
       if (!this.feed.some(item => item.type === "question" && item.requestId === event.id)) {
         this.feed.push({ id, type: "question", requestId: event.id, questions: event.questions });
+      }
+    } else if (event.type === "request_resolved") {
+      const item = this.feed.find(entry =>
+        (entry.type === "permission" || entry.type === "question") && entry.requestId === event.id);
+      if (item && (item.type === "permission" || item.type === "question") && !item.resolved) {
+        item.resolved = REQUEST_OUTCOME_LABELS[event.outcome];
       }
     } else if (event.type === "status") {
       this.setStatus(event.status);
