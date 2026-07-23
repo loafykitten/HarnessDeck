@@ -11,6 +11,7 @@
 .chat-pane.active{display:flex}
 .chat-header{display:flex;align-items:center;gap:14px;padding:8px 13px;border-bottom:1px solid var(--glass-brd);background:var(--glass);flex:none}
 .chat-limits{display:grid;grid-template-columns:auto 70px 30px auto 70px 30px;align-items:center;gap:5px;font:9.5px ui-monospace,monospace;color:var(--ink-faint)}
+.chat-limits.fable{grid-template-columns:auto 70px 30px auto 70px 30px auto 70px 30px}
 .chat-limits i{height:5px;background:var(--ring-track);border-radius:9px;overflow:hidden}
 .chat-limits i b{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),var(--accent-2));box-shadow:0 0 6px var(--accent)}
 .chat-limits em{font-style:normal;text-align:right}
@@ -127,11 +128,12 @@
   .chat-shell{min-height:620px}
   .chat-header{align-items:flex-start;flex-direction:column}.chat-head-meta{margin-left:0}
   .chat-limits{grid-template-columns:auto minmax(45px,70px) 30px auto minmax(45px,70px) 30px;width:100%}
+  .chat-limits.fable{grid-template-columns:auto minmax(45px,70px) 30px auto minmax(45px,70px) 30px auto minmax(45px,70px) 30px}
   .chat-message,.thinking-card{max-width:95%}
   .chat-new-form{grid-template-columns:1fr}
   .chat-new-form>*{grid-column:1!important}
   .composer-row{align-items:flex-end}.composer-options{gap:5px}
 }
 
-.chat-limits span:nth-child(4){margin-left:9px}
+.chat-limits span:nth-child(4),.chat-limits span:nth-child(7){margin-left:9px}
 .chat-new-form select,.composer-options select{-webkit-appearance:none;appearance:none;cursor:pointer;padding-right:22px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238f86b8' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 7px center}

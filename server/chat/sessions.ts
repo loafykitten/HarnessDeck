@@ -42,6 +42,7 @@ export interface ChatSession {
   sdkSessionId: string | null;
   status: ChatStatus;
   costUsd: number;
+  totalTokens: number;
   created: number;
   lastActivity: number;
 }
@@ -71,6 +72,7 @@ const view = (session: InternalSession): ChatSession => ({
   sdkSessionId: session.sdkSessionId,
   status: session.status,
   costUsd: session.costUsd,
+  totalTokens: session.totalTokens,
   created: session.created,
   lastActivity: session.lastActivity,
 });
@@ -87,6 +89,7 @@ async function loadSessions(): Promise<void> {
           ...item,
           status: "idle",
           costUsd: item.costUsd ?? 0,
+          totalTokens: item.totalTokens ?? 0,
           canBypassPermissions: item.canBypassPermissions ?? item.permissionMode === "bypassPermissions",
           handle: null,
           events: [],
@@ -120,11 +123,23 @@ function emit(session: InternalSession, event: DriverEvent): void {
   const next = { ...event, seq: ++session.seq } as ChatEvent;
   session.lastActivity = Date.now();
   if (event.type === "status") session.status = event.status;
-  if (event.type === "result") session.costUsd = event.costUsd;
+  if (event.type === "result") {
+    session.costUsd = event.costUsd;
+    if (session.harness === "claude") session.totalTokens = usageTokens(event.usage);
+  }
   session.events.push(next);
   if (session.events.length > MAX_EVENTS) session.events.splice(0, session.events.length - MAX_EVENTS);
   for (const listener of session.listeners) listener(next);
   if (event.type === "status" || event.type === "result") void persist();
+}
+
+function usageTokens(usage: unknown): number {
+  if (!usage || typeof usage !== "object") return 0;
+  const values = usage as Record<string, unknown>;
+  return ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]
+    .reduce((total, key) => total + (typeof values[key] === "number" && Number.isFinite(values[key])
+      ? Math.max(0, values[key])
+      : 0), 0);
 }
 
 function ensureHandle(session: InternalSession): ChatHandle {
@@ -183,6 +198,7 @@ export async function createChatSession(input: {
     sdkSessionId: null,
     status: "idle",
     costUsd: 0,
+    totalTokens: 0,
     created: now,
     lastActivity: now,
     handle: null,
