@@ -54,7 +54,7 @@ export type DriverEvent =
 export interface ChatHandle {
   /** Set once the underlying agent process is gone for good; the registry starts a fresh handle. */
   readonly dead?: boolean;
-  send(text: string): void;
+  send(text: string, imagePaths?: string[]): Promise<void>;
   respondPermission(id: string, response: PermissionResponse): void;
   respondQuestion(id: string, response: QuestionResponse): void;
   setOptions(options: Partial<ChatOptions>): Promise<void>;

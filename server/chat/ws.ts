@@ -30,7 +30,10 @@ export const chatWebsocket: WebSocketHandler<ChatWsData> = {
     try { message = JSON.parse(raw); } catch { return; }
     const id = ws.data.chatId;
     if (message.type === "user_message" && typeof message.text === "string") {
-      sendChatMessage(id, message.text);
+      const imagePaths = Array.isArray(message.imagePaths)
+        ? message.imagePaths.filter((path): path is string => typeof path === "string")
+        : [];
+      await sendChatMessage(id, message.text, imagePaths);
     } else if (message.type === "permission_response" && typeof message.id === "string") {
       respondChatPermission(id, message.id, {
         behavior: message.behavior === "allow" ? "allow" : "deny",

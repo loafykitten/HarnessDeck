@@ -63,7 +63,7 @@ export interface ChatInit {
 }
 
 export type ChatClientMessage =
-  | { type: "user_message"; text: string }
+  | { type: "user_message"; text: string; imagePaths?: string[] }
   | { type: "permission_response"; id: string; behavior: "allow" | "deny"; updatedInput?: Record<string, unknown>; always?: boolean; message?: string }
   | { type: "question_response"; id: string; answers: Record<string, string[]> }
   | { type: "set_options"; model?: ChatModel; effort?: ChatEffort; permissionMode?: ChatPermissionMode }

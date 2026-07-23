@@ -1,4 +1,5 @@
 import { chime } from "../lib/sound";
+import { api } from "../lib/api";
 import type {
   ChatClientMessage,
   ChatEffort,
@@ -22,12 +23,18 @@ const REQUEST_OUTCOME_LABELS: Record<RequestOutcome, string> = {
   dismissed: "dismissed",
 };
 
+export type PendingChatImage = { path: string; previewUrl: string };
+
 export class ChatConnection {
   feed = $state<ChatFeedItem[]>([]);
   session = $state<ChatSession | null>(null);
   status = $state<ChatStatus>("idle");
   connected = $state(false);
   reconnecting = $state(false);
+  draft = $state("");
+  attachments = $state<PendingChatImage[]>([]);
+  uploadingImages = $state(0);
+  attachmentError = $state("");
 
   private ws: WebSocket | null = null;
   private lastSeq = 0;
@@ -52,8 +59,50 @@ export class ChatConnection {
     }
   }
 
-  send(text: string): void {
-    if (text.trim()) this.sendWs({ type: "user_message", text: text.trim() });
+  setDraft(text: string): void {
+    this.draft = text;
+  }
+
+  async attachImage(blob: Blob): Promise<void> {
+    const previewUrl = URL.createObjectURL(blob);
+    this.uploadingImages += 1;
+    this.attachmentError = "";
+    try {
+      const { path } = await api.pasteChatImage(this.sessionId, blob);
+      if (this.disposed) {
+        URL.revokeObjectURL(previewUrl);
+        return;
+      }
+      this.attachments.push({ path, previewUrl });
+    } catch (cause) {
+      URL.revokeObjectURL(previewUrl);
+      if (!this.disposed) {
+        this.attachmentError = cause instanceof Error ? cause.message : "Could not attach image";
+      }
+    } finally {
+      this.uploadingImages -= 1;
+    }
+  }
+
+  removeAttachment(path: string): void {
+    const attachment = this.attachments.find(item => item.path === path);
+    if (attachment) URL.revokeObjectURL(attachment.previewUrl);
+    this.attachments = this.attachments.filter(item => item.path !== path);
+  }
+
+  send(): void {
+    const text = this.draft.trim();
+    if (this.uploadingImages || (!text && !this.attachments.length)) return;
+    const sent = this.sendWs({
+      type: "user_message",
+      text,
+      imagePaths: this.attachments.map(item => item.path),
+    });
+    if (!sent) return;
+    this.draft = "";
+    for (const attachment of this.attachments) URL.revokeObjectURL(attachment.previewUrl);
+    this.attachments = [];
+    this.attachmentError = "";
   }
 
   respondPermission(id: string, behavior: "allow" | "deny", always = false, message?: string): void {
@@ -85,11 +134,15 @@ export class ChatConnection {
     if (this.pingTimer) clearInterval(this.pingTimer);
     this.ws?.close();
     this.ws = null;
+    for (const attachment of this.attachments) URL.revokeObjectURL(attachment.previewUrl);
+    this.attachments = [];
     stores.delete(this.sessionId);
   }
 
-  private sendWs(message: ChatClientMessage): void {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(message));
+  private sendWs(message: ChatClientMessage): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify(message));
+    return true;
   }
 
   private suspend(): void {

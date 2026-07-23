@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import type {
   ClientNotification,
   ClientRequest,
@@ -24,6 +25,7 @@ import type {
   TurnInterruptResponse,
   TurnStartParams,
   TurnStartResponse,
+  UserInput,
 } from "./codex-protocol/v2";
 import type {
   ChatDriver,
@@ -35,6 +37,7 @@ import type {
   PermissionResponse,
   QuestionResponse,
 } from "./driver";
+import { chatImageMediaType } from "./images";
 
 type RpcError = { code: number; message: string; data?: unknown };
 type RpcResponse = { id: string | number; result?: unknown; error?: RpcError };
@@ -45,6 +48,7 @@ type PendingRpc = {
 type PendingApproval = {
   respond: (response: PermissionResponse) => void;
 };
+type QueuedMessage = { text: string; imagePaths: string[] };
 
 const chatDebug = (message: string): void => {
   if (process.env.HARNESSDECK_CHAT_DEBUG === "1") console.log(`[chat:codex] ${message}`);
@@ -177,7 +181,7 @@ class CodexChatHandle implements ChatHandle {
   private modelEfforts = new Map<string, string[]>();
   private lastErrorMessage: string | null = null;
   private interruptFallback: ReturnType<typeof setTimeout> | null = null;
-  private queue: string[] = [];
+  private queue: QueuedMessage[] = [];
   dead = false;
   private proc: Bun.PipedSubprocess;
   private requestId = 0;
@@ -216,11 +220,12 @@ class CodexChatHandle implements ChatHandle {
     for (const listener of this.listeners) listener(event);
   }
 
-  send(text: string): void {
+  async send(text: string, imagePaths: string[] = []): Promise<void> {
     if (this.stopped) return;
-    this.emit({ type: "block", role: "user", content: text });
+    const displayText = text || (imagePaths.length === 1 ? "Attached an image" : `Attached ${imagePaths.length} images`);
+    this.emit({ type: "block", role: "user", content: displayText });
     if (!this.pendingApprovals.size) this.emit({ type: "status", status: "working" });
-    this.queue.push(text);
+    this.queue.push({ text, imagePaths });
     void this.pump();
   }
 
@@ -351,16 +356,22 @@ class CodexChatHandle implements ChatHandle {
     try {
       await this.ready;
       if (this.stopped || this.activeTurnId) return;
-      const text = this.queue.shift();
+      const queued = this.queue.shift();
       const threadId = this.threadId;
-      if (!text || !threadId) return;
+      if (!queued || !threadId) return;
       const mapped = permissionOptions(this.options.permissionMode);
       const model = this.options.model === "default"
         ? this.defaultModel ?? this.effectiveModel
         : this.options.model;
+      const input: UserInput[] = [];
+      if (queued.text) input.push({ type: "text", text: queued.text, text_elements: [] });
+      for (const path of queued.imagePaths) {
+        const data = (await readFile(path)).toString("base64");
+        input.push({ type: "image", url: `data:${chatImageMediaType(path)};base64,${data}` });
+      }
       const params: TurnStartParams = {
         threadId,
-        input: [{ type: "text", text, text_elements: [] }],
+        input,
         cwd: this.options.cwd,
         approvalPolicy: mapped.approvalPolicy,
         approvalsReviewer: "user",

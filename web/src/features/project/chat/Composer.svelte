@@ -8,20 +8,31 @@
     type ChatSession,
     type ChatStatus,
   } from "../../../types/chat";
+  import type { PendingChatImage } from "../../../stores/chat.svelte";
 
-  let { session, status, connected, send, setOptions, interrupt }: {
+  let {
+    session, status, connected, draft, attachments, uploadingImages, attachmentError,
+    setDraft, attachImage, removeAttachment, send, setOptions, interrupt,
+  }: {
     session: ChatSession | null;
     status: ChatStatus;
     connected: boolean;
-    send: (text: string) => void;
+    draft: string;
+    attachments: PendingChatImage[];
+    uploadingImages: number;
+    attachmentError: string;
+    setDraft: (text: string) => void;
+    attachImage: (blob: Blob) => Promise<void>;
+    removeAttachment: (path: string) => void;
+    send: () => void;
     setOptions: (options: { model?: ChatModel; effort?: ChatEffort; permissionMode?: ChatPermissionMode }) => void;
     interrupt: () => void;
   } = $props();
-  let text = $state("");
   let model = $state<ChatModel>("default");
   let effort = $state<ChatEffort>("high");
   let permissionMode = $state<ChatPermissionMode>("default");
   const canSend = $derived(connected && session !== null);
+  const canSubmit = $derived(canSend && uploadingImages === 0 && (draft.trim().length > 0 || attachments.length > 0));
   const idlePlaceholder = $derived(session?.harness === "codex" ? "Message Codex…" : "Message Claude…");
 
   $effect(() => {
@@ -32,9 +43,8 @@
   });
 
   function submit(): void {
-    if (!text.trim() || !canSend) return;
-    send(text);
-    text = "";
+    if (!canSubmit) return;
+    send();
   }
 
   function keydown(event: KeyboardEvent): void {
@@ -43,11 +53,38 @@
       submit();
     }
   }
+
+  async function paste(event: ClipboardEvent): Promise<void> {
+    const images = [...(event.clipboardData?.items ?? [])]
+      .filter(item => item.type.startsWith("image/"))
+      .map(item => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (!images.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    for (const image of images) await attachImage(image);
+  }
 </script>
 
 <div class="chat-composer">
+  {#if attachments.length}
+    <div class="attachment-previews" aria-label="Attached images">
+      {#each attachments as attachment, index (attachment.path)}
+        <div class="attachment-preview">
+          <img src={attachment.previewUrl} alt={`Pasted image ${index + 1}`} />
+          <button type="button" aria-label={`Remove pasted image ${index + 1}`} title="Remove image"
+            onclick={() => removeAttachment(attachment.path)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg>
+          </button>
+        </div>
+      {/each}
+    </div>
+  {/if}
   <textarea rows="3" placeholder={status === "waiting" ? "Answer the request above or queue a message…" : status === "working" ? "Queue another message…" : idlePlaceholder}
-    bind:value={text} onkeydown={keydown} disabled={!canSend}></textarea>
+    value={draft} oninput={(event) => setDraft(event.currentTarget.value)} onkeydown={keydown} onpaste={paste}
+    disabled={!canSend}></textarea>
+  {#if uploadingImages}<div class="attachment-notice">Attaching {uploadingImages === 1 ? "image" : `${uploadingImages} images`}…</div>{/if}
+  {#if attachmentError}<div class="attachment-notice error">{attachmentError}</div>{/if}
   <div class="composer-row">
     <div class="composer-options">
       <label>model<select bind:value={model} onchange={() => setOptions({ model })}>
@@ -63,6 +100,6 @@
     {#if status === "working"}
       <button class="interrupt" onclick={interrupt}>Interrupt</button>
     {/if}
-    <button class="send" disabled={!canSend || !text.trim()} onclick={submit}>Send</button>
+    <button class="send" disabled={!canSubmit} onclick={submit}>Send</button>
   </div>
 </div>

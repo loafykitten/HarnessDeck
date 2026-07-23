@@ -2,8 +2,14 @@ import { err, json, type RouteHandler } from "../http";
 import {
   createChatSession,
   deleteChatSession,
+  hasChatSession,
   listChatSessions,
 } from "./sessions";
+import {
+  chatImageExtension,
+  MAX_CHAT_IMAGE_BYTES,
+  saveChatImage,
+} from "./images";
 import {
   isChatEffort,
   isChatHarness,
@@ -41,6 +47,22 @@ export const chatRoutes: RouteHandler = async (req, url) => {
     } catch (error) {
       return err(error instanceof Error ? error.message : "create failed", 404);
     }
+  }
+  const imageMatch = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)\/image$/);
+  if (imageMatch && req.method === "POST") {
+    const id = decodeURIComponent(imageMatch[1]);
+    if (!(await hasChatSession(id))) return err("no such chat session", 404);
+    const contentLength = Number(req.headers.get("content-length"));
+    if (Number.isFinite(contentLength) && contentLength > MAX_CHAT_IMAGE_BYTES) {
+      return err("image too large", 413);
+    }
+    const extension = chatImageExtension(req.headers.get("content-type") ?? "");
+    if (!extension) return err("unsupported image type", 415);
+    const blob = await req.blob();
+    if (blob.size === 0) return err("empty body");
+    if (blob.size > MAX_CHAT_IMAGE_BYTES) return err("image too large", 413);
+    const path = await saveChatImage(blob, extension);
+    return json({ ok: true, path });
   }
   const match = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)$/);
   if (match && req.method === "DELETE") {

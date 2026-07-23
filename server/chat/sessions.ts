@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { claudeChatDriver } from "./claude";
 import { codexChatDriver } from "./codex";
+import { validateChatImagePaths } from "./images";
 import type {
   ChatEffort,
   ChatHandle,
@@ -222,11 +223,17 @@ export function reportChatError(id: string, message: string): void {
   if (session) emit(session, { type: "error", message });
 }
 
-export function sendChatMessage(id: string, text: string): boolean {
+export async function sendChatMessage(id: string, text: string, imagePaths: string[] = []): Promise<boolean> {
   const session = sessions.get(id);
-  if (!session || !text.trim()) return false;
-  ensureHandle(session).send(text.trim());
-  return true;
+  if (!session || (!text.trim() && !imagePaths.length)) return false;
+  try {
+    const validatedPaths = await validateChatImagePaths(imagePaths);
+    await ensureHandle(session).send(text.trim(), validatedPaths);
+    return true;
+  } catch (error) {
+    emit(session, { type: "error", message: error instanceof Error ? error.message : String(error) });
+    return false;
+  }
 }
 
 export function respondChatPermission(id: string, requestId: string, response: PermissionResponse): boolean {
