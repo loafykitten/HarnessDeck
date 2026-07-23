@@ -6,8 +6,8 @@
   import ChatHeader from "./ChatHeader.svelte";
   import Composer from "./Composer.svelte";
 
-  let { sessionId, active, branch, onSession }: {
-    sessionId: string; active: boolean; branch?: string; onSession?: (session: ChatSession) => void;
+  let { project, sessionId, active, branch, onSession }: {
+    project: string; sessionId: string; active: boolean; branch?: string; onSession?: (session: ChatSession) => void;
   } = $props();
   const chat = getChatStore(untrack(() => sessionId));
 
@@ -21,7 +21,7 @@
   <ChatFeed feed={chat.feed} harness={chat.session?.harness ?? "claude"}
     permission={(id, behavior, always, message) => chat.respondPermission(id, behavior, always, message)}
     question={(id, answers) => chat.respondQuestion(id, answers)} />
-  <Composer session={chat.session} status={chat.status} connected={chat.connected}
+  <Composer {project} session={chat.session} status={chat.status} connected={chat.connected}
     send={(text) => chat.send(text)} setOptions={(options) => chat.setOptions(options)}
     interrupt={() => chat.interrupt()} />
 </section>

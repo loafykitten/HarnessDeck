@@ -89,9 +89,19 @@
 .subagent-feed{display:flex;flex-direction:column;gap:9px;padding:10px 10px 10px 20px;border-left:2px solid rgba(var(--accent-3-rgb),.35);margin-left:12px}
 
 .chat-composer{padding:10px 12px;border-top:1px solid var(--glass-brd);background:var(--term-bar);flex:none}
+.composer-input{position:relative}
 .chat-composer textarea{display:block;width:100%;min-height:56px;max-height:180px;resize:vertical;padding:9px 11px;color:var(--ink);background:rgba(0,0,0,.09);border:1px solid var(--glass-brd);border-radius:10px;outline:none;font:12.5px/1.45 inherit}
 .chat-composer textarea:focus{border-color:var(--accent-2);box-shadow:0 0 18px -10px var(--accent-2)}
 .chat-composer textarea:disabled{opacity:.55;cursor:not-allowed}
+.file-mention-popup{position:absolute;left:0;bottom:calc(100% + 7px);z-index:12;width:min(680px,100%);max-height:min(42vh,320px);overflow:auto;padding:6px;border:1px solid var(--glass-brd-lit);border-radius:13px;background:var(--glass-2);backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);box-shadow:0 16px 42px -18px var(--shadow),0 0 28px -12px var(--accent)}
+.file-mention-title{display:flex;align-items:center;justify-content:space-between;padding:4px 7px 7px;color:var(--ink-faint);font:700 9px ui-monospace,monospace;letter-spacing:.09em;text-transform:uppercase}
+.file-mention-title kbd{padding:2px 5px;border:1px solid var(--glass-brd);border-radius:5px;background:var(--glass);color:var(--ink-faint);font:8px ui-monospace,monospace;text-transform:none}
+.file-mention-popup button{display:flex;align-items:center;width:100%;min-width:0;padding:7px 9px;border:1px solid transparent;border-radius:8px;color:var(--ink-dim);font:11.5px/1.35 ui-monospace,monospace;text-align:left}
+.file-mention-popup button span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-mention-popup button:hover,.file-mention-popup button.selected{color:var(--ink);border-color:var(--glass-brd-lit);background:var(--glass-2);box-shadow:inset 3px 0 0 var(--accent-2),0 0 16px -10px var(--accent)}
+.file-mention-at{flex:none;margin-right:1px;color:var(--accent-2);text-shadow:0 0 8px var(--accent-2)}
+.file-mention-state{padding:18px 10px;text-align:center;color:var(--ink-faint);font-size:11px}
+.file-mention-state.error{color:var(--bad)}
 .composer-row{display:flex;align-items:center;gap:10px;margin-top:8px}
 .composer-options{display:flex;flex-wrap:wrap;gap:8px}
 .composer-options label{display:flex;align-items:center;gap:4px;font:9px ui-monospace,monospace;color:var(--ink-faint);text-transform:uppercase}

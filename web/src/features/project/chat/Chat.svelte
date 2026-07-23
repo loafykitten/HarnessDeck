@@ -61,7 +61,7 @@
     <div class="chat-loading">Loading chats…</div>
   {:else}
     {#each chatSessions.sessions as session (session.id)}
-      <ChatPane sessionId={session.id} active={session.id === activeId} {branch} onSession={(updated) => chatSessions.update(updated)} />
+      <ChatPane {project} sessionId={session.id} active={session.id === activeId} {branch} onSession={(updated) => chatSessions.update(updated)} />
     {/each}
   {/if}
   {#if chatSessions.error}<div class="chat-error shell-error">{chatSessions.error}</div>{/if}
