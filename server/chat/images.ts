@@ -4,7 +4,12 @@ import { mkdir, readdir, realpath, stat, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 
 export const CHAT_PASTE_DIR = join(homedir(), "Library", "Caches", "HarnessDeck", "pastes");
-export const MAX_CHAT_IMAGE_BYTES = 32 * 1024 * 1024;
+// Chat images are base64-inlined into API requests (unlike terminal pastes,
+// which only pass a file path). The Claude API caps images at 10 MB encoded
+// (≈7.5 MB raw) and requests at 32 MB total, and anything over 2576px long
+// edge is downscaled server-side anyway — 5 MB raw keeps multi-image
+// messages comfortably inside both limits.
+export const MAX_CHAT_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export type ChatImageMediaType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 

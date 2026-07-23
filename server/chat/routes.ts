@@ -54,13 +54,13 @@ export const chatRoutes: RouteHandler = async (req, url) => {
     if (!(await hasChatSession(id))) return err("no such chat session", 404);
     const contentLength = Number(req.headers.get("content-length"));
     if (Number.isFinite(contentLength) && contentLength > MAX_CHAT_IMAGE_BYTES) {
-      return err("image too large", 413);
+      return err("image too large (max 5 MB)", 413);
     }
     const extension = chatImageExtension(req.headers.get("content-type") ?? "");
     if (!extension) return err("unsupported image type", 415);
     const blob = await req.blob();
     if (blob.size === 0) return err("empty body");
-    if (blob.size > MAX_CHAT_IMAGE_BYTES) return err("image too large", 413);
+    if (blob.size > MAX_CHAT_IMAGE_BYTES) return err("image too large (max 5 MB)", 413);
     const path = await saveChatImage(blob, extension);
     return json({ ok: true, path });
   }

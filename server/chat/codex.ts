@@ -48,7 +48,7 @@ type PendingRpc = {
 type PendingApproval = {
   respond: (response: PermissionResponse) => void;
 };
-type QueuedMessage = { text: string; imagePaths: string[] };
+type QueuedMessage = { text: string; imageUrls: string[] };
 
 const chatDebug = (message: string): void => {
   if (process.env.HARNESSDECK_CHAT_DEBUG === "1") console.log(`[chat:codex] ${message}`);
@@ -222,10 +222,23 @@ class CodexChatHandle implements ChatHandle {
 
   async send(text: string, imagePaths: string[] = []): Promise<void> {
     if (this.stopped) return;
+    // Read + encode before emitting the user block, so an unreadable file
+    // fails cleanly instead of leaving a phantom user message (matches the
+    // claude driver, which reads before emitting).
+    const imageUrls: string[] = [];
+    try {
+      for (const path of imagePaths) {
+        const data = (await readFile(path)).toString("base64");
+        imageUrls.push(`data:${chatImageMediaType(path)};base64,${data}`);
+      }
+    } catch (error) {
+      this.emit({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      return;
+    }
     const displayText = text || (imagePaths.length === 1 ? "Attached an image" : `Attached ${imagePaths.length} images`);
     this.emit({ type: "block", role: "user", content: displayText });
     if (!this.pendingApprovals.size) this.emit({ type: "status", status: "working" });
-    this.queue.push({ text, imagePaths });
+    this.queue.push({ text, imageUrls });
     void this.pump();
   }
 
@@ -365,9 +378,8 @@ class CodexChatHandle implements ChatHandle {
         : this.options.model;
       const input: UserInput[] = [];
       if (queued.text) input.push({ type: "text", text: queued.text, text_elements: [] });
-      for (const path of queued.imagePaths) {
-        const data = (await readFile(path)).toString("base64");
-        input.push({ type: "image", url: `data:${chatImageMediaType(path)};base64,${data}` });
+      for (const url of queued.imageUrls) {
+        input.push({ type: "image", url });
       }
       const params: TurnStartParams = {
         threadId,
