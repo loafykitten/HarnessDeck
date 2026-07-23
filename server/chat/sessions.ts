@@ -125,7 +125,7 @@ function emit(session: InternalSession, event: DriverEvent): void {
   if (event.type === "status") session.status = event.status;
   if (event.type === "result") {
     session.costUsd = event.costUsd;
-    if (session.harness === "claude") session.totalTokens += usageTokens(event.usage);
+    if (session.harness === "claude") session.totalTokens = usageTokens(event.usage);
   }
   session.events.push(next);
   if (session.events.length > MAX_EVENTS) session.events.splice(0, session.events.length - MAX_EVENTS);

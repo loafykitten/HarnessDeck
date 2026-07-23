@@ -255,7 +255,7 @@ export class ChatConnection {
       if (this.session) {
         this.session.costUsd = event.costUsd;
         if (!this.replayingInit && this.session.harness === "claude") {
-          this.session.totalTokens += usageTokens(event.usage);
+          this.session.totalTokens = usageTokens(event.usage);
         }
       }
     } else if (event.type === "error") {
