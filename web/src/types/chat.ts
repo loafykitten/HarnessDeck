@@ -31,6 +31,7 @@ export interface ChatSession {
   sdkSessionId: string | null;
   status: ChatStatus;
   costUsd: number;
+  totalTokens: number;
   created: number;
   lastActivity: number;
 }

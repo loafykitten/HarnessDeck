@@ -22,6 +22,15 @@ const REQUEST_OUTCOME_LABELS: Record<RequestOutcome, string> = {
   dismissed: "dismissed",
 };
 
+function usageTokens(usage: unknown): number {
+  if (!usage || typeof usage !== "object") return 0;
+  const values = usage as Record<string, unknown>;
+  return ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]
+    .reduce((total, key) => total + (typeof values[key] === "number" && Number.isFinite(values[key])
+      ? Math.max(0, values[key])
+      : 0), 0);
+}
+
 export class ChatConnection {
   feed = $state<ChatFeedItem[]>([]);
   session = $state<ChatSession | null>(null);
@@ -243,7 +252,12 @@ export class ChatConnection {
     } else if (event.type === "status") {
       this.setStatus(event.status);
     } else if (event.type === "result") {
-      if (this.session) this.session.costUsd = event.costUsd;
+      if (this.session) {
+        this.session.costUsd = event.costUsd;
+        if (!this.replayingInit && this.session.harness === "claude") {
+          this.session.totalTokens += usageTokens(event.usage);
+        }
+      }
     } else if (event.type === "error") {
       this.feed.push({ id, type: "error", message: event.message });
     }
