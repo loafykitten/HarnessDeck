@@ -19,6 +19,24 @@ type CreateChatInput = {
 };
 
 const stores = new Map<string, ChatSessionsStore>();
+const drafts = new Map<string, ChatDraft>();
+
+export class ChatDraft {
+  text = $state("");
+}
+
+export function getChatDraft(sessionId: string): ChatDraft {
+  let draft = drafts.get(sessionId);
+  if (!draft) {
+    draft = new ChatDraft();
+    drafts.set(sessionId, draft);
+  }
+  return draft;
+}
+
+function disposeChatDraft(sessionId: string): void {
+  drafts.delete(sessionId);
+}
 
 function savedMode(project: string): ProjectMode {
   return localStorage.getItem(`hd-project-mode:${project}`) === "chat" ? "chat" : "terminal";
@@ -68,6 +86,7 @@ export class ChatSessionsStore {
     try {
       await api.deleteChatSession(id);
       disposeChatStore(id);
+      disposeChatDraft(id);
       this.sessions = this.sessions.filter(session => session.id !== id);
       if (this.sessions.length === 0) this.showForm = true;
     } catch (cause) {

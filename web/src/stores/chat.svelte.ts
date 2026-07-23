@@ -61,8 +61,9 @@ export class ChatConnection {
     }
   }
 
-  send(text: string): void {
-    if (text.trim()) this.sendWs({ type: "user_message", text: text.trim() });
+  send(text: string): boolean {
+    const trimmed = text.trim();
+    return trimmed ? this.sendWs({ type: "user_message", text: trimmed }) : false;
   }
 
   respondPermission(id: string, behavior: "allow" | "deny", always = false, message?: string): void {
@@ -97,8 +98,10 @@ export class ChatConnection {
     stores.delete(this.sessionId);
   }
 
-  private sendWs(message: ChatClientMessage): void {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(message));
+  private sendWs(message: ChatClientMessage): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify(message));
+    return true;
   }
 
   private suspend(): void {
