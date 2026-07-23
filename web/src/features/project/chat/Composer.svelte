@@ -8,16 +8,17 @@
     type ChatSession,
     type ChatStatus,
   } from "../../../types/chat";
+  import type { ChatDraft } from "../../../stores/chatSessions.svelte";
 
-  let { session, status, connected, send, setOptions, interrupt }: {
+  let { draft, session, status, connected, send, setOptions, interrupt }: {
+    draft: ChatDraft;
     session: ChatSession | null;
     status: ChatStatus;
     connected: boolean;
-    send: (text: string) => void;
+    send: (text: string) => boolean;
     setOptions: (options: { model?: ChatModel; effort?: ChatEffort; permissionMode?: ChatPermissionMode }) => void;
     interrupt: () => void;
   } = $props();
-  let text = $state("");
   let model = $state<ChatModel>("default");
   let effort = $state<ChatEffort>("high");
   let permissionMode = $state<ChatPermissionMode>("default");
@@ -32,9 +33,8 @@
   });
 
   function submit(): void {
-    if (!text.trim() || !canSend) return;
-    send(text);
-    text = "";
+    if (!draft.text.trim() || !canSend) return;
+    if (send(draft.text)) draft.text = "";
   }
 
   function keydown(event: KeyboardEvent): void {
@@ -47,7 +47,7 @@
 
 <div class="chat-composer">
   <textarea rows="3" placeholder={status === "waiting" ? "Answer the request above or queue a message…" : status === "working" ? "Queue another message…" : idlePlaceholder}
-    bind:value={text} onkeydown={keydown} disabled={!canSend}></textarea>
+    bind:value={draft.text} onkeydown={keydown} disabled={!canSend}></textarea>
   <div class="composer-row">
     <div class="composer-options">
       <label>model<select bind:value={model} onchange={() => setOptions({ model })}>
@@ -63,6 +63,6 @@
     {#if status === "working"}
       <button class="interrupt" onclick={interrupt}>Interrupt</button>
     {/if}
-    <button class="send" disabled={!canSend || !text.trim()} onclick={submit}>Send</button>
+    <button class="send" disabled={!canSend || !draft.text.trim()} onclick={submit}>Send</button>
   </div>
 </div>
