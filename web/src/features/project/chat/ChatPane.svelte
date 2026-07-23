@@ -24,6 +24,9 @@
     permission={(id, behavior, always, message) => chat.respondPermission(id, behavior, always, message)}
     question={(id, answers) => chat.respondQuestion(id, answers)} />
   <Composer {project} {draft} session={chat.session} status={chat.status} connected={chat.connected}
+    attachments={chat.attachments} uploadingImages={chat.uploadingImages}
+    attachmentError={chat.attachmentError}
+    attachImage={(blob) => chat.attachImage(blob)} removeAttachment={(path) => chat.removeAttachment(path)}
     send={(text) => chat.send(text)} setOptions={(options) => chat.setOptions(options)}
     interrupt={() => chat.interrupt()} />
 </section>

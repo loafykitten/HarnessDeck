@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import {
   query,
   type CanUseTool,
@@ -19,6 +20,7 @@ import type {
   PermissionResponse,
   QuestionResponse,
 } from "./driver";
+import { chatImageMediaType } from "./images";
 
 class AsyncQueue<T> implements AsyncIterable<T> {
   private values: T[] = [];
@@ -158,17 +160,30 @@ class ClaudeChatHandle implements ChatHandle {
     for (const listener of this.listeners) listener(event);
   }
 
-  send(text: string): void {
+  async send(text: string, imagePaths: string[] = []): Promise<void> {
     if (this.stopped) return;
     if (this.interruptFallback) {
       clearTimeout(this.interruptFallback);
       this.interruptFallback = null;
     }
-    this.emit({ type: "block", role: "user", content: text });
+    const content: Exclude<SDKUserMessage["message"]["content"], string> = [];
+    if (text) content.push({ type: "text", text });
+    for (const path of imagePaths) {
+      content.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: chatImageMediaType(path),
+          data: (await readFile(path)).toString("base64"),
+        },
+      });
+    }
+    const displayText = text || (imagePaths.length === 1 ? "Attached an image" : `Attached ${imagePaths.length} images`);
+    this.emit({ type: "block", role: "user", content: displayText });
     if (!this.pending.size) this.emit({ type: "status", status: "working" });
     this.input.push({
       type: "user",
-      message: { role: "user", content: text },
+      message: { role: "user", content },
       parent_tool_use_id: null,
       origin: { kind: "human" },
     });

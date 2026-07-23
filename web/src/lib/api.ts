@@ -40,6 +40,11 @@ export const api = {
   }),
   deleteChatSession: (id: string) =>
     j<{ ok: boolean }>(`/api/chat/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  pasteChatImage: (sessionId: string, blob: Blob) =>
+    j<{ ok: boolean; path: string }>(
+      `/api/chat/sessions/${encodeURIComponent(sessionId)}/image`,
+      { method: "POST", headers: { "content-type": blob.type || "image/png" }, body: blob },
+    ),
   setCodexMode: (mode: CodexMode) =>
     j<{ mode: CodexMode; configText: string }>("/api/codex/mode", {
       method: "PUT",

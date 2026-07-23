@@ -40,13 +40,22 @@
     type ChatStatus,
   } from "../../../types/chat";
   import type { ChatDraft } from "../../../stores/chatSessions.svelte";
+  import type { PendingChatImage } from "../../../stores/chat.svelte";
 
-  let { project, draft, session, status, connected, send, setOptions, interrupt }: {
+  let {
+    project, draft, session, status, connected, attachments, uploadingImages, attachmentError,
+    attachImage, removeAttachment, send, setOptions, interrupt,
+  }: {
     project: string;
     draft: ChatDraft;
     session: ChatSession | null;
     status: ChatStatus;
     connected: boolean;
+    attachments: PendingChatImage[];
+    uploadingImages: number;
+    attachmentError: string;
+    attachImage: (blob: Blob) => Promise<void>;
+    removeAttachment: (path: string) => void;
     send: (text: string) => boolean;
     setOptions: (options: { model?: ChatModel; effort?: ChatEffort; permissionMode?: ChatPermissionMode }) => void;
     interrupt: () => void;
@@ -65,6 +74,7 @@
   let filesFailedAt = 0;
   const FILE_RETRY_MS = 5_000;
   const canSend = $derived(connected && session !== null);
+  const canSubmit = $derived(canSend && uploadingImages === 0 && (draft.text.trim().length > 0 || attachments.length > 0));
   const idlePlaceholder = $derived(session?.harness === "codex" ? "Message Codex…" : "Message Claude…");
   const mentionOpen = $derived(mentionStart !== null);
   const popupId = $derived(`file-mention-options-${session?.id ?? project}`);
@@ -87,7 +97,7 @@
   });
 
   function submit(): void {
-    if (!draft.text.trim() || !canSend) return;
+    if (!canSubmit) return;
     if (send(draft.text)) {
       draft.text = "";
       closeMention();
@@ -219,9 +229,33 @@
       submit();
     }
   }
+
+  async function paste(event: ClipboardEvent): Promise<void> {
+    const images = [...(event.clipboardData?.items ?? [])]
+      .filter(item => item.type.startsWith("image/"))
+      .map(item => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (!images.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    for (const image of images) await attachImage(image);
+  }
 </script>
 
 <div class="chat-composer">
+  {#if attachments.length}
+    <div class="attachment-previews" aria-label="Attached images">
+      {#each attachments as attachment, index (attachment.path)}
+        <div class="attachment-preview">
+          <img src={attachment.previewUrl} alt={`Pasted image ${index + 1}`} />
+          <button type="button" aria-label={`Remove pasted image ${index + 1}`} title="Remove image"
+            onclick={() => removeAttachment(attachment.path)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg>
+          </button>
+        </div>
+      {/each}
+    </div>
+  {/if}
   <div class="composer-input">
     {#if mentionOpen}
       <div class="file-mention-popup" id={popupId} role="listbox" aria-label="Project files">
@@ -244,7 +278,7 @@
       </div>
     {/if}
     <textarea rows="3" placeholder={status === "waiting" ? "Answer the request above or queue a message…" : status === "working" ? "Queue another message…" : idlePlaceholder}
-      bind:this={textarea} value={draft.text} oninput={input} onkeydown={keydown}
+      bind:this={textarea} value={draft.text} oninput={input} onkeydown={keydown} onpaste={paste}
       onblur={() => closeMention()}
       onclick={(event) => updateMention(event.currentTarget)}
       onkeyup={(event) => { if (!["ArrowUp", "ArrowDown", "Enter", "Tab", "Escape"].includes(event.key)) updateMention(event.currentTarget); }}
@@ -252,6 +286,8 @@
       aria-activedescendant={mentionOpen && matches[selectedIndex] ? `${popupId}-${selectedIndex}` : undefined}
       disabled={!canSend}></textarea>
   </div>
+  {#if uploadingImages}<div class="attachment-notice">Attaching {uploadingImages === 1 ? "image" : `${uploadingImages} images`}…</div>{/if}
+  {#if attachmentError}<div class="attachment-notice error">{attachmentError}</div>{/if}
   <div class="composer-row">
     <div class="composer-options">
       <label>model<select bind:value={model} onchange={() => setOptions({ model })}>
@@ -267,6 +303,6 @@
     {#if status === "working"}
       <button class="interrupt" onclick={interrupt}>Interrupt</button>
     {/if}
-    <button class="send" disabled={!canSend || !draft.text.trim()} onclick={submit}>Send</button>
+    <button class="send" disabled={!canSubmit} onclick={submit}>Send</button>
   </div>
 </div>
