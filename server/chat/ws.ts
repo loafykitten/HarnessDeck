@@ -1,20 +1,18 @@
 import type { WebSocketHandler } from "bun";
-import type { ChatEffort, ChatModel, ChatPermissionMode } from "./driver";
 import {
   chatInit,
+  chatSessionHarness,
   interruptChat,
+  reportChatError,
   respondChatPermission,
   respondChatQuestion,
   sendChatMessage,
   setChatOptions,
   subscribeChat,
 } from "./sessions";
+import { isChatEffort, isChatModel, isChatPermissionMode } from "./options";
 
 export type ChatWsData = { chatId: string; unsubscribe?: () => void };
-
-const MODELS = new Set<ChatModel>(["default", "fable", "opus", "sonnet", "haiku"]);
-const EFFORTS = new Set<ChatEffort>(["low", "medium", "high", "xhigh", "max"]);
-const MODES = new Set<ChatPermissionMode>(["default", "plan", "acceptEdits", "bypassPermissions"]);
 
 export const chatWebsocket: WebSocketHandler<ChatWsData> = {
   idleTimeout: 960,
@@ -50,11 +48,22 @@ export const chatWebsocket: WebSocketHandler<ChatWsData> = {
       respondChatQuestion(id, message.id, { answers });
     } else if (message.type === "set_options") {
       const { model, effort, permissionMode } = message;
-      await setChatOptions(id, {
-        model: MODELS.has(model as ChatModel) ? model as ChatModel : undefined,
-        effort: EFFORTS.has(effort as ChatEffort) ? effort as ChatEffort : undefined,
-        permissionMode: MODES.has(permissionMode as ChatPermissionMode) ? permissionMode as ChatPermissionMode : undefined,
-      });
+      const harness = chatSessionHarness(id);
+      if (!harness) return;
+      const options: Parameters<typeof setChatOptions>[1] = {};
+      if (model !== undefined) {
+        if (isChatModel(harness, model)) options.model = model;
+        else reportChatError(id, `unknown ${harness} model: ${model}`);
+      }
+      if (effort !== undefined) {
+        if (isChatEffort(harness, effort)) options.effort = effort;
+        else reportChatError(id, `unknown ${harness} effort: ${effort}`);
+      }
+      if (permissionMode !== undefined) {
+        if (isChatPermissionMode(permissionMode)) options.permissionMode = permissionMode;
+        else reportChatError(id, `unknown permission mode: ${permissionMode}`);
+      }
+      if (Object.keys(options).length) await setChatOptions(id, options);
     } else if (message.type === "interrupt") {
       await interruptChat(id);
     }

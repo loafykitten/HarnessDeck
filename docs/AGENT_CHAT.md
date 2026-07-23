@@ -1,29 +1,33 @@
 # Agent Chat — Status & Handoff
 
-_Last updated: 2026-07-21. The Claude driver shipped and is running in production
-(launchd instance restarted onto this code). **Everything is uncommitted on main.**_
+_Last updated: 2026-07-22. Claude chat is running in production; the Codex driver
+is implemented and verified on the isolated dev instance. **Everything is
+uncommitted on main.**_
 
 ## What exists
 
 A per-project **Terminal / Chat** toggle in the project view. Chat sessions drive
-Claude programmatically via `@anthropic-ai/claude-agent-sdk` (subscription OAuth,
-one `claude` subprocess per active session) — separate from tmux sessions, with
-their own tabs, persisted per project in localStorage.
+Claude programmatically via `@anthropic-ai/claude-agent-sdk`, or Codex via
+`codex app-server` (subscription auth; one harness subprocess per active session)
+— separate from tmux sessions, with their own tabs, persisted per project in
+localStorage.
 
-Working end-to-end (all verified live in Sandbox + headless Chrome, zero console
-errors): streamed replies, thinking collapsibles, expandable tool cards, subagent
+Claude is working end-to-end (verified live in Sandbox + headless Chrome, zero
+console errors): streamed replies, thinking collapsibles, expandable tool cards, subagent
 grouping by `parent_tool_use_id`, approval cards (Allow / Always allow /
 Deny-with-message), AskUserQuestion as option buttons (multiSelect + free-text),
 mid-session model/effort/mode switching, interrupt, mid-run message queueing,
 session resume across server restarts (client resyncs via seq), usage/branch/cost
-header strip, all three themes.
+header strip, all three themes. Codex adds streamed replies, reasoning, tool and
+command cards, approval round trips, interrupt, queued turns, per-turn option
+changes, and persisted `thread/resume` continuity.
 
 ## File map
 
 | Area | Files |
 |---|---|
 | Spec (original) | `docs/AGENT_CHAT_PLAN.md` |
-| Server slice | `server/chat/{driver,claude,sessions,routes,ws}.ts` — driver.ts is the harness seam for a future Codex impl |
+| Server slice | `server/chat/{driver,claude,codex,options,sessions,routes,ws}.ts`; generated Codex bindings live in `server/chat/codex-protocol/` |
 | WS wiring + PORT env | `server/index.ts` (`/ws/chat/:id` beside `/ws/session/:id`; `PORT` env override) |
 | Frontend | `web/src/features/project/chat/*.svelte` (11 components), `web/src/stores/chat.svelte.ts`, `web/src/types/chat.ts`, `web/src/app/styles/chat.css` |
 | Store files | `~/.config/harnessdeck/chat-sessions.json` (port 4553); other ports get `chat-sessions-<port>.json` |
@@ -53,6 +57,38 @@ header strip, all three themes.
 - **`.chat-feed>*{flex-shrink:0}`** is load-bearing: cards with
   `overflow:hidden` in the scrolling flex column otherwise collapse to 2px once
   content overflows (flexbox auto-min-size rule).
+- **Codex permission modes map to app-server policy, not Claude mode names:**
+
+  | UI mode | Codex sandbox | Codex approval policy |
+  |---|---|---|
+  | `default` | `workspace-write` | `untrusted` |
+  | `plan` | `read-only` | `untrusted` |
+  | `acceptEdits` | `workspace-write` | `on-request` |
+  | `bypassPermissions` | `danger-full-access` | `never` |
+
+  `untrusted` is the app-server's interactive default. `acceptEdits` lowers
+  friction to `on-request`; this protocol version has no `on-failure` value.
+  Bypass remains available only to sessions created with that capability.
+- **Codex picker values are version-pinned to the generated 0.145.0 catalog:**
+  models `default`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`; efforts
+  `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. `default` resolves through
+  app-server's current default model. The driver clamps an unsupported effort to
+  the model's highest supported one at turn start (gpt-5.6-luna has no `ultra`),
+  using the `model/list` catalog fetched at session init.
+- **Turn lifecycle is guarded against out-of-order arrival**: `turn/start`'s RPC
+  response, `turn/started`, and `turn/completed` can land in one stdout chunk,
+  so the awaited response resolves *after* the notifications. A `completedTurns`
+  set keeps a finished turn's id from being resurrected into `activeTurnId`
+  (which would deadlock the session permanently). Don't simplify this away.
+- **A dead agent process doesn't kill the tab**: drivers set `handle.dead` when
+  the subprocess exits; the registry starts a fresh handle (resuming via the
+  persisted continuation id) on the next message.
+- **`send()` during a pending approval must not emit `working`** — the store
+  interprets leaving `waiting` as "requests answered" and hides Allow/Deny on
+  still-open approval cards. Both drivers guard this.
+- **Codex deny reasons only reach the wire on the legacy approval channel**
+  (`ReviewDecision.denied.rejection`); the v2 request-approval responses have no
+  message field, so the typed deny-reason is dropped there by protocol design.
 
 ## Review history (all green)
 
@@ -65,18 +101,34 @@ Screenshot evidence lived in a session scratchpad (ephemeral) — regenerate via
 headless Chrome :9222 + puppeteer-core if needed (codex's built-in browser
 backends don't work on this machine).
 
+**Codex driver round (2026-07-22)**: gpt-5.6-sol implemented against generated
+protocol types + a live `model/list` probe; opus-4.8 (high) adversarial review
+found 1 critical (fast-turn `activeTurnId` resurrection deadlock), 4 major
+(`setOptions` undefined-merge silently downgrading plan→workspace-write, dead
+handle after app-server crash, poison-queue resend after failed `turn/start`,
+send-during-approval hiding Allow/Deny — that last one shared with the claude
+driver), 4 minor (interrupt fallback, `configWarning` shape, dropped deny
+reason, ws set_options batch abort) — all fixed by Claude, plus a
+duplicate-error-card bug the screenshot pass surfaced (error notification and
+failed `turn/completed` both reported one failure). Protocol shapes, bypass
+gating, and project validation verified clean. UI screenshot pass: form,
+pickers, header, themes, claude regression all pass, zero console errors.
+
 ## Open items
 
-1. **Not committed.** Working tree on main carries the whole feature.
+1. **Codex live turns unverified post-fix.** The ChatGPT account hit its weekly
+   usage limit (resets Jul 28, 2026 ~5 PM) mid-verification, after the
+   implementation-phase WS smoke (streaming, approval allow/deny, resume) had
+   passed but before the browser pass could exercise approval cards or the
+   post-review lifecycle fixes against real turns. On quota return: one codex
+   chat in Sandbox — trivial prompt, approval allow + deny, a fast tool-less
+   turn (deadlock regression), an effort=ultra turn on gpt-5.6-luna (clamp).
 2. **Safari untested** — all verification was headless Chrome; no clipboard or
    exotic APIs used, but give it a real WebKit pass.
-3. **Codex driver (next phase)**: implement `ChatDriver` over `codex app-server`
-   (stdio JSONL JSON-RPC; generate types via `codex app-server generate-ts`;
-   wire quirk: `jsonrpc` field omitted). Bonus once a persistent app-server
-   exists: replace rollout-JSONL usage parsing (`server/usage/codex-usage.ts`)
-   with `account/rateLimits/read`, JWT plan-parsing with `account/read`, and the
-   config.toml comment-toggling with `config/value/write`. Full research is in
-   Claude's memory (`agent-chat-interface-research.md`).
+3. **Usage-RPC migration (separate pass)**: replace rollout-JSONL usage parsing
+   (`server/usage/codex-usage.ts`) with `account/rateLimits/read`, JWT
+   plan-parsing with `account/read`, and the config.toml comment-toggling with
+   `config/value/write`. Deliberately out of scope for chat.
 4. Deferred taste-notes from UI review (optional): pulsing dot on LIVE; eyeball
    subagent-card nesting depth with real heavy content.
 

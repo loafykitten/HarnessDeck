@@ -1,8 +1,22 @@
-export type ChatHarness = "claude";
-export type ChatModel = "default" | "fable" | "opus" | "sonnet" | "haiku";
-export type ChatEffort = "low" | "medium" | "high" | "xhigh" | "max";
+export type ChatHarness = "claude" | "codex";
+export type ClaudeChatModel = "default" | "fable" | "opus" | "sonnet" | "haiku";
+export type CodexChatModel = "default" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna";
+export type ChatModel = ClaudeChatModel | CodexChatModel;
+export type ClaudeChatEffort = "low" | "medium" | "high" | "xhigh" | "max";
+export type CodexChatEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export type ChatEffort = ClaudeChatEffort | CodexChatEffort;
 export type ChatPermissionMode = "default" | "plan" | "acceptEdits" | "bypassPermissions";
 export type ChatStatus = "working" | "waiting" | "idle";
+
+export const CHAT_MODELS = {
+  claude: ["default", "fable", "opus", "sonnet", "haiku"],
+  codex: ["default", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+} as const satisfies Record<ChatHarness, readonly ChatModel[]>;
+
+export const CHAT_EFFORTS = {
+  claude: ["low", "medium", "high", "xhigh", "max"],
+  codex: ["low", "medium", "high", "xhigh", "max", "ultra"],
+} as const satisfies Record<ChatHarness, readonly ChatEffort[]>;
 
 export interface ChatSession {
   id: string;

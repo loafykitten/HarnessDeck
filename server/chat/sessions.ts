@@ -3,9 +3,11 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { claudeChatDriver } from "./claude";
+import { codexChatDriver } from "./codex";
 import type {
   ChatEffort,
   ChatHandle,
+  ChatHarness,
   ChatModel,
   ChatOptions,
   ChatPermissionMode,
@@ -21,8 +23,12 @@ const PORT = Number(process.env.PORT) || 4553;
 const STORE_PATH = join(STORE_DIR, PORT === 4553 ? "chat-sessions.json" : `chat-sessions-${PORT}.json`);
 const MAX_EVENTS = 500;
 
-export type ChatHarness = "claude";
 export type ChatEvent = DriverEvent & { seq: number };
+
+const DRIVERS = {
+  claude: claudeChatDriver,
+  codex: codexChatDriver,
+} satisfies Record<ChatHarness, typeof claudeChatDriver>;
 
 export interface ChatSession {
   id: string;
@@ -76,7 +82,7 @@ async function loadSessions(): Promise<void> {
     try {
       const stored = JSON.parse(await readFile(STORE_PATH, "utf8")) as StoredSession[];
       for (const item of stored) {
-        if (!item?.id?.startsWith("chat-") || item.harness !== "claude") continue;
+        if (!item?.id?.startsWith("chat-") || (item.harness !== "claude" && item.harness !== "codex")) continue;
         sessions.set(item.id, {
           ...item,
           status: "idle",
@@ -122,8 +128,8 @@ function emit(session: InternalSession, event: DriverEvent): void {
 }
 
 function ensureHandle(session: InternalSession): ChatHandle {
-  if (session.handle) return session.handle;
-  const handle = claudeChatDriver.start({
+  if (session.handle && !session.handle.dead) return session.handle;
+  const handle = DRIVERS[session.harness].start({
     cwd: join(DEV_DIR, session.project),
     model: session.model,
     effort: session.effort,
@@ -205,6 +211,15 @@ export function subscribeChat(id: string, listener: (event: ChatEvent) => void):
   if (!session) return null;
   session.listeners.add(listener);
   return () => session.listeners.delete(listener);
+}
+
+export function chatSessionHarness(id: string): ChatHarness | null {
+  return sessions.get(id)?.harness ?? null;
+}
+
+export function reportChatError(id: string, message: string): void {
+  const session = sessions.get(id);
+  if (session) emit(session, { type: "error", message });
 }
 
 export function sendChatMessage(id: string, text: string): boolean {

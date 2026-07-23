@@ -4,11 +4,12 @@ import {
   deleteChatSession,
   listChatSessions,
 } from "./sessions";
-import type { ChatEffort, ChatModel, ChatPermissionMode } from "./driver";
-
-const MODELS = new Set<ChatModel>(["default", "fable", "opus", "sonnet", "haiku"]);
-const EFFORTS = new Set<ChatEffort>(["low", "medium", "high", "xhigh", "max"]);
-const MODES = new Set<ChatPermissionMode>(["default", "plan", "acceptEdits", "bypassPermissions"]);
+import {
+  isChatEffort,
+  isChatHarness,
+  isChatModel,
+  isChatPermissionMode,
+} from "./options";
 
 export const chatRoutes: RouteHandler = async (req, url) => {
   if (url.pathname === "/api/chat/sessions" && req.method === "GET") {
@@ -21,20 +22,20 @@ export const chatRoutes: RouteHandler = async (req, url) => {
     }
     const harness = body.harness ?? "claude";
     const model = body.model ?? "default";
-    const effort = body.effort ?? "high";
+    const effort = body.effort ?? (harness === "codex" ? "medium" : "high");
     const permissionMode = body.permissionMode ?? "default";
-    if (harness !== "claude") return err(`unsupported chat harness: ${harness}`);
-    if (!MODELS.has(model as ChatModel)) return err(`unknown model: ${model}`);
-    if (!EFFORTS.has(effort as ChatEffort)) return err(`unknown effort: ${effort}`);
-    if (!MODES.has(permissionMode as ChatPermissionMode)) return err(`unknown permission mode: ${permissionMode}`);
+    if (!isChatHarness(harness)) return err(`unsupported chat harness: ${harness}`);
+    if (!isChatModel(harness, model)) return err(`unknown ${harness} model: ${model}`);
+    if (!isChatEffort(harness, effort)) return err(`unknown ${harness} effort: ${effort}`);
+    if (!isChatPermissionMode(permissionMode)) return err(`unknown permission mode: ${permissionMode}`);
     try {
       const session = await createChatSession({
         project: body.project,
         name: body.name.trim() || "chat",
         harness,
-        model: model as ChatModel,
-        effort: effort as ChatEffort,
-        permissionMode: permissionMode as ChatPermissionMode,
+        model,
+        effort,
+        permissionMode,
       });
       return json(session, 201);
     } catch (error) {

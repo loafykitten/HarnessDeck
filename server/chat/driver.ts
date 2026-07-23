@@ -1,6 +1,11 @@
 export type ChatStatus = "working" | "waiting" | "idle";
-export type ChatModel = "default" | "fable" | "opus" | "sonnet" | "haiku";
-export type ChatEffort = "low" | "medium" | "high" | "xhigh" | "max";
+export type ChatHarness = "claude" | "codex";
+export type ClaudeChatModel = "default" | "fable" | "opus" | "sonnet" | "haiku";
+export type CodexChatModel = "default" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna";
+export type ChatModel = ClaudeChatModel | CodexChatModel;
+export type ClaudeChatEffort = "low" | "medium" | "high" | "xhigh" | "max";
+export type CodexChatEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export type ChatEffort = ClaudeChatEffort | CodexChatEffort;
 export type ChatPermissionMode = "default" | "plan" | "acceptEdits" | "bypassPermissions";
 
 export interface ChatOptions {
@@ -45,6 +50,8 @@ export type DriverEvent =
   | { type: "error"; message: string };
 
 export interface ChatHandle {
+  /** Set once the underlying agent process is gone for good; the registry starts a fresh handle. */
+  readonly dead?: boolean;
   send(text: string): void;
   respondPermission(id: string, response: PermissionResponse): void;
   respondQuestion(id: string, response: QuestionResponse): void;

@@ -2,7 +2,15 @@
   import { onMount } from "svelte";
   import { api } from "../../../lib/api";
   import { disposeChatStore } from "../../../stores/chat.svelte";
-  import type { ChatEffort, ChatModel, ChatPermissionMode, ChatSession } from "../../../types/chat";
+  import {
+    CHAT_EFFORTS,
+    CHAT_MODELS,
+    type ChatEffort,
+    type ChatHarness,
+    type ChatModel,
+    type ChatPermissionMode,
+    type ChatSession,
+  } from "../../../types/chat";
   import { fmtAgo } from "../../../utils/format";
   import ChatPane from "./ChatPane.svelte";
 
@@ -14,9 +22,16 @@
   let showForm = $state(false);
   let error = $state("");
   let name = $state("");
+  let harness = $state<ChatHarness>("claude");
   let model = $state<ChatModel>("default");
   let effort = $state<ChatEffort>("high");
   let permissionMode = $state<ChatPermissionMode>("default");
+
+  function selectHarness(next: ChatHarness): void {
+    harness = next;
+    model = "default";
+    effort = next === "codex" ? "medium" : "high";
+  }
 
   onMount(async () => {
     try {
@@ -35,7 +50,7 @@
       const session = await api.createChatSession({
         project,
         name: name.trim() || `chat-${sessions.length + 1}`,
-        harness: "claude",
+        harness,
         model,
         effort,
         permissionMode,
@@ -84,11 +99,11 @@
 
   {#if showForm}
     <form class="chat-new-form" onsubmit={(event) => { event.preventDefault(); create(); }}>
-      <div class="form-title"><b>New agent chat</b><span>Chat with a Claude agent directly — separate from your tmux sessions</span></div>
+      <div class="form-title"><b>New agent chat</b><span>Chat with an agent directly — separate from your tmux sessions</span></div>
       <label>Name<input placeholder={`chat-${sessions.length + 1}`} bind:value={name} /></label>
-      <fieldset><legend>Agent</legend><div class="agent-pick"><button type="button" class="on"><span class="hx claude">Claude</span></button><button type="button" disabled><span class="hx codex">Codex</span><small>soon</small></button></div></fieldset>
-      <label>Model<select bind:value={model}><option value="default">default</option><option value="fable">fable</option><option value="opus">opus</option><option value="sonnet">sonnet</option><option value="haiku">haiku</option></select></label>
-      <label>Effort<select bind:value={effort}><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option><option value="max">max</option></select></label>
+      <fieldset><legend>Agent</legend><div class="agent-pick"><button type="button" class:on={harness === "claude"} onclick={() => selectHarness("claude")}><span class="hx claude">Claude</span></button><button type="button" class:on={harness === "codex"} onclick={() => selectHarness("codex")}><span class="hx codex">Codex</span></button></div></fieldset>
+      <label>Model<select bind:value={model}>{#each CHAT_MODELS[harness] as choice}<option value={choice}>{choice}</option>{/each}</select></label>
+      <label>Effort<select bind:value={effort}>{#each CHAT_EFFORTS[harness] as choice}<option value={choice}>{choice}</option>{/each}</select></label>
       <label>Mode<select bind:value={permissionMode}><option value="default">default</option><option value="plan">plan</option><option value="acceptEdits">accept edits</option><option value="bypassPermissions">skip approvals</option></select></label>
       <div class="form-actions"><button type="submit" class="btn" disabled={creating}>{creating ? "Starting…" : "Start chat"}</button>{#if sessions.length}<button type="button" class="btn ghost" onclick={() => showForm = false}>Cancel</button>{/if}</div>
     </form>

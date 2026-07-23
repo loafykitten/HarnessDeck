@@ -13,7 +13,7 @@ import {
 import type { AskUserQuestionOutput } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
 import type {
   ChatDriver,
-  ChatEffort,
+  ClaudeChatEffort,
   ChatHandle,
   ChatOptions,
   ChatStartOptions,
@@ -174,7 +174,7 @@ class ClaudeChatHandle implements ChatHandle {
       options: {
         cwd: options.cwd,
         model: options.model === "default" ? undefined : options.model,
-        effort: options.effort,
+        effort: options.effort as ClaudeChatEffort,
         permissionMode: options.permissionMode,
         ...(options.canBypassPermissions || options.permissionMode === "bypassPermissions"
           ? { allowDangerouslySkipPermissions: true }
@@ -206,7 +206,7 @@ class ClaudeChatHandle implements ChatHandle {
       this.interruptFallback = null;
     }
     this.emit({ type: "block", role: "user", content: text });
-    this.emit({ type: "status", status: "working" });
+    if (!this.pending.size) this.emit({ type: "status", status: "working" });
     this.input.push({
       type: "user",
       message: { role: "user", content: text },
@@ -270,7 +270,7 @@ class ClaudeChatHandle implements ChatHandle {
       await this.sdk.setModel(options.model === "default" ? undefined : options.model);
     }
     if (options.effort !== undefined) {
-      await this.sdk.applyFlagSettings({ effortLevel: options.effort as ChatEffort });
+      await this.sdk.applyFlagSettings({ effortLevel: options.effort as ClaudeChatEffort });
     }
     if (options.permissionMode !== undefined) await this.sdk.setPermissionMode(options.permissionMode);
     this.options = { ...this.options, ...options };

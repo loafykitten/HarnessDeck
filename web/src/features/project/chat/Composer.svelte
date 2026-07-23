@@ -1,5 +1,13 @@
 <script lang="ts">
-  import type { ChatEffort, ChatModel, ChatPermissionMode, ChatSession, ChatStatus } from "../../../types/chat";
+  import {
+    CHAT_EFFORTS,
+    CHAT_MODELS,
+    type ChatEffort,
+    type ChatModel,
+    type ChatPermissionMode,
+    type ChatSession,
+    type ChatStatus,
+  } from "../../../types/chat";
 
   let { session, status, connected, send, setOptions, interrupt }: {
     session: ChatSession | null;
@@ -14,6 +22,7 @@
   let effort = $state<ChatEffort>("high");
   let permissionMode = $state<ChatPermissionMode>("default");
   const canSend = $derived(connected && session !== null);
+  const idlePlaceholder = $derived(session?.harness === "codex" ? "Message Codex…" : "Message Claude…");
 
   $effect(() => {
     if (!session) return;
@@ -37,15 +46,15 @@
 </script>
 
 <div class="chat-composer">
-  <textarea rows="3" placeholder={status === "waiting" ? "Answer the request above or queue a message…" : status === "working" ? "Queue another message…" : "Message Claude…"}
+  <textarea rows="3" placeholder={status === "waiting" ? "Answer the request above or queue a message…" : status === "working" ? "Queue another message…" : idlePlaceholder}
     bind:value={text} onkeydown={keydown} disabled={!canSend}></textarea>
   <div class="composer-row">
     <div class="composer-options">
       <label>model<select bind:value={model} onchange={() => setOptions({ model })}>
-        <option value="default">default</option><option value="fable">fable</option><option value="opus">opus</option><option value="sonnet">sonnet</option><option value="haiku">haiku</option>
+        {#each CHAT_MODELS[session?.harness ?? "claude"] as choice}<option value={choice}>{choice}</option>{/each}
       </select></label>
       <label>effort<select bind:value={effort} onchange={() => setOptions({ effort })}>
-        <option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option><option value="max">max</option>
+        {#each CHAT_EFFORTS[session?.harness ?? "claude"] as choice}<option value={choice}>{choice}</option>{/each}
       </select></label>
       <label>mode<select bind:value={permissionMode} onchange={() => setOptions({ permissionMode })}>
         <option value="default">default</option><option value="plan">plan</option><option value="acceptEdits">accept edits</option><option value="bypassPermissions" disabled={!session?.canBypassPermissions}>skip approvals</option>
