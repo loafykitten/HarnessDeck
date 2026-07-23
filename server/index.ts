@@ -1,6 +1,6 @@
 import type { WebSocketHandler } from "bun";
 import { err, json, serveStatic, type RouteHandler } from "./http";
-import { hasSession } from "./terminal/sessions";
+import { hasSession, reconcilePersistedSessions } from "./terminal/sessions";
 import { terminalRoutes } from "./terminal/routes";
 import { terminalWebsocket, type WsData as TerminalWsData } from "./terminal/ws";
 import { chatRoutes } from "./chat/routes";
@@ -16,6 +16,8 @@ import { getNews } from "./news/news";
 import { ensureTailscaleServe } from "./tailscale";
 
 const PORT = Number(process.env.PORT) || 4553;
+
+await reconcilePersistedSessions();
 
 type WsData = TerminalWsData | ChatWsData;
 

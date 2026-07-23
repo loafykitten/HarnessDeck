@@ -1,6 +1,14 @@
 import { homedir } from "node:os";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { DEFAULT_HARNESS, HARNESSES, isHarnessId, type HarnessId } from "../harness/registry";
+import {
+  addSessionRegistryEntry,
+  readSessionRegistry,
+  removeSessionRegistryEntries,
+  syncSessionRegistry,
+  type PersistedSession,
+} from "./persistence";
 
 const PREFIX = "cc-";
 const SEP = "--";
@@ -38,6 +46,21 @@ async function ensureClipboard(): Promise<void> {
     "set-option", "-as", "terminal-features", "xterm-256color:clipboard",
   );
   if (features.ok) clipboardConfigured = true;
+}
+
+async function startTmuxSession(id: string, dir: string, command: string): Promise<{ ok: boolean; error: string }> {
+  // Login + interactive zsh sources ~/.zprofile and ~/.zshrc, so the agent
+  // inherits the user's env vars. exec makes the tmux session end with it.
+  const res = await tmux(
+    "new-session", "-d", "-s", id, "-c", dir, "-x", "220", "-y", "50",
+    "zsh", "-lic", `exec ${command}`,
+  );
+  if (!res.ok) return { ok: false, error: res.err.trim() || "tmux new-session failed" };
+  await ensureClipboard();
+  // no '=' prefix: set-option's -t is a pane-style target that rejects it
+  await tmux("set-option", "-t", `${id}:`, "status", "off");
+  invalidateSessionCaches();
+  return { ok: true, error: "" };
 }
 
 function sanitize(s: string): string {
@@ -92,7 +115,7 @@ async function computeBaseSessions(): Promise<Session[]> {
     "list-sessions", "-F",
     "#{session_name}|#{session_created}|#{session_activity}|#{session_attached}",
   );
-  if (!ok) return []; // tmux server not running = no sessions
+  if (!ok) return []; // tmux server not running = no sessions; never prune here
   const sessions: Session[] = [];
   for (const line of out.trim().split("\n")) {
     if (!line) continue;
@@ -114,6 +137,15 @@ async function computeBaseSessions(): Promise<Session[]> {
     });
   }
   sessions.sort((a, b) => b.activity - a.activity);
+  if (!reconciliationInProgress) {
+    const live = sessions.map(({ id, project, name, harness, created }) =>
+      ({ id, project, name, harness, created }));
+    try {
+      await syncSessionRegistry(live, recentlyRecreatedIds());
+    } catch (error) {
+      console.error("sync session registry", error);
+    }
+  }
   return sessions;
 }
 
@@ -151,7 +183,7 @@ export async function listSessions(): Promise<Session[]> {
 export async function createSession(project: string, name: string, harness: HarnessId = DEFAULT_HARNESS): Promise<{ id: string } | { error: string }> {
   const dir = join(DEV_DIR, project);
   try {
-    const st = await import("node:fs/promises").then(fs => fs.stat(dir));
+    const st = await stat(dir);
     if (!st.isDirectory()) return { error: `not a directory: ${dir}` };
   } catch {
     return { error: `no such project: ${project}` };
@@ -159,26 +191,92 @@ export async function createSession(project: string, name: string, harness: Harn
   const id = sessionId(project, name, harness);
   const existing = await tmux("has-session", "-t", `=${id}`);
   if (existing.ok) return { error: `session already exists: ${id}` };
-  // Login + interactive zsh (sources ~/.zprofile and ~/.zshrc, so the agent
-  // inherits the user's env vars) that execs the harness binary: when it
-  // exits, the shell — and with it the session — ends.
-  const res = await tmux(
-    "new-session", "-d", "-s", id, "-c", dir, "-x", "220", "-y", "50",
-    "zsh", "-lic", `exec ${HARNESSES[harness].bin}`,
-  );
-  if (!res.ok) return { error: res.err.trim() || "tmux new-session failed" };
-  await ensureClipboard();
-  // no '=' prefix: set-option's -t is a pane-style target that rejects it
-  await tmux("set-option", "-t", `${id}:`, "status", "off");
-  invalidateSessionCaches();
+  const started = await startTmuxSession(id, dir, HARNESSES[harness].bin);
+  if (!started.ok) return { error: started.error };
+  await addSessionRegistryEntry({ id, project, name, harness, created: Date.now() });
   return { id };
 }
 
 export async function killSession(id: string): Promise<boolean> {
   if (!id.startsWith(PREFIX)) return false;
   const res = await tmux("kill-session", "-t", `=${id}`);
-  if (res.ok) invalidateSessionCaches();
+  if (res.ok) {
+    invalidateSessionCaches();
+    await removeSessionRegistryEntries([id]);
+  }
   return res.ok;
+}
+
+const RECREATED_PROTECTION_MS = 10_000;
+const recentlyRecreated = new Map<string, number>();
+let reconciliationInProgress = false;
+
+function recentlyRecreatedIds(): Set<string> {
+  const now = Date.now();
+  const ids = new Set<string>();
+  for (const [id, recreatedAt] of recentlyRecreated) {
+    if (now - recreatedAt < RECREATED_PROTECTION_MS) ids.add(id);
+    else recentlyRecreated.delete(id);
+  }
+  return ids;
+}
+
+async function isProjectDirectory(dir: string): Promise<boolean> {
+  try { return (await stat(dir)).isDirectory(); } catch { return false; }
+}
+
+function isValidRegistryEntry(entry: PersistedSession): boolean {
+  return entry.id === sessionId(entry.project, entry.name, entry.harness);
+}
+
+export async function reconcilePersistedSessions(): Promise<void> {
+  reconciliationInProgress = true;
+  let restored = 0;
+  let running = 0;
+  let dropped = 0;
+  let failed = 0;
+  try {
+    const entries = await readSessionRegistry();
+    const dropIds = new Set<string>();
+    const restorable: PersistedSession[] = [];
+    for (const entry of entries) {
+      const dir = join(DEV_DIR, entry.project);
+      if (!isValidRegistryEntry(entry) || !(await isProjectDirectory(dir))) {
+        dropIds.add(entry.id);
+        dropped += 1;
+      } else {
+        restorable.push(entry);
+      }
+    }
+    await removeSessionRegistryEntries(dropIds);
+
+    const projectHarnessCounts = new Map<string, number>();
+    for (const entry of restorable) {
+      const key = `${entry.project}\0${entry.harness}`;
+      projectHarnessCounts.set(key, (projectHarnessCounts.get(key) ?? 0) + 1);
+    }
+
+    for (const entry of restorable) {
+      if ((await tmux("has-session", "-t", `=${entry.id}`)).ok) {
+        running += 1;
+        continue;
+      }
+      const key = `${entry.project}\0${entry.harness}`;
+      const harness = HARNESSES[entry.harness];
+      const command = projectHarnessCounts.get(key) === 1 ? harness.resumeLast : harness.resumePick;
+      const result = await startTmuxSession(entry.id, join(DEV_DIR, entry.project), command);
+      if (result.ok) {
+        recentlyRecreated.set(entry.id, Date.now());
+        restored += 1;
+      } else {
+        failed += 1;
+        console.error(`restore session ${entry.id}: ${result.error}`);
+      }
+    }
+  } finally {
+    reconciliationInProgress = false;
+  }
+  console.log(`Sessions: restored ${restored}, already running ${running}, dropped ${dropped}, failed ${failed}`);
 }
 
 export async function hasSession(id: string): Promise<boolean> {

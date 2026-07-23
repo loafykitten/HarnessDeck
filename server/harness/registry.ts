@@ -13,6 +13,9 @@ export interface Harness {
   label: string;
   /** Absolute path preferred; falls back to PATH lookup in the login shell. */
   bin: string;
+  /** Commands used to resume a conversation after restoring a tmux session. */
+  resumeLast: string;
+  resumePick: string;
   skillsDir: string;
   /** Global instructions file (CLAUDE.md / AGENTS.md). */
   mdPath: string;
@@ -26,12 +29,16 @@ export interface Harness {
 }
 
 const home = homedir();
+const claudeBin = Bun.which("claude") ?? join(home, ".local", "bin", "claude");
+const codexBin = Bun.which("codex") ?? "codex";
 
 export const HARNESSES: Record<HarnessId, Harness> = {
   claude: {
     id: "claude",
     label: "Claude",
-    bin: Bun.which("claude") ?? join(home, ".local", "bin", "claude"),
+    bin: claudeBin,
+    resumeLast: `${claudeBin} --continue`,
+    resumePick: `${claudeBin} --resume`,
     skillsDir: join(home, ".claude", "skills"),
     mdPath: join(home, ".claude", "CLAUDE.md"),
     mdLabel: "~/.claude/CLAUDE.md",
@@ -44,7 +51,9 @@ export const HARNESSES: Record<HarnessId, Harness> = {
   codex: {
     id: "codex",
     label: "Codex",
-    bin: Bun.which("codex") ?? "codex",
+    bin: codexBin,
+    resumeLast: `${codexBin} resume --last`,
+    resumePick: `${codexBin} resume`,
     skillsDir: join(home, ".codex", "skills"),
     mdPath: join(home, ".codex", "AGENTS.md"),
     mdLabel: "~/.codex/AGENTS.md",
