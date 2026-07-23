@@ -94,3 +94,12 @@ export interface SkillJob {
   status: "running" | "done" | "error";
   error?: string; startedAt: number; completedAt?: number;
 }
+export interface ServerStatus {
+  dir: string;
+  bootedAt: number;
+  bootedCommit: string | null;
+  headCommit: string | null;
+  commitsBehind: number;
+  pendingFiles: string[];
+  busyChats: { id: string; name: string; project: string; status: string }[];
+}

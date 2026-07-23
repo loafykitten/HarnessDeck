@@ -1,8 +1,8 @@
 # Agent Chat — Status & Handoff
 
-_Last updated: 2026-07-22. Claude chat is running in production; the Codex driver
-is implemented and verified on the isolated dev instance. **Everything is
-uncommitted on main.**_
+_Last updated: 2026-07-23. Claude chat is running in production; the Codex driver
+is implemented and verified on the isolated dev instance. The chat/* feature
+branches landed on main at `6715cb7`; history rehydration landed 2026-07-23._
 
 ## What exists
 
@@ -27,7 +27,7 @@ changes, and persisted `thread/resume` continuity.
 | Area | Files |
 |---|---|
 | Spec (original) | `docs/AGENT_CHAT_PLAN.md` |
-| Server slice | `server/chat/{driver,claude,codex,options,sessions,routes,ws}.ts`; generated Codex bindings live in `server/chat/codex-protocol/` |
+| Server slice | `server/chat/{driver,claude,codex,options,sessions,routes,ws,history}.ts`; generated Codex bindings live in `server/chat/codex-protocol/` |
 | WS wiring + PORT env | `server/index.ts` (`/ws/chat/:id` beside `/ws/session/:id`; `PORT` env override) |
 | Frontend | `web/src/features/project/chat/*.svelte` (11 components), `web/src/stores/chat.svelte.ts`, `web/src/types/chat.ts`, `web/src/app/styles/chat.css` |
 | Store files | `~/.config/harnessdeck/chat-sessions.json` (port 4553); other ports get `chat-sessions-<port>.json` |
@@ -90,6 +90,21 @@ changes, and persisted `thread/resume` continuity.
 - **Codex deny reasons only reach the wire on the legacy approval channel**
   (`ReviewDecision.denied.rejection`); the v2 request-approval responses have no
   message field, so the typed deny-reason is dropped there by protocol design.
+- **Chat history survives server restarts via rehydration, not persistence**
+  (`server/chat/history.ts`): on load, each session's event feed is rebuilt from
+  the harness's own on-disk record (Claude project transcript / Codex rollout,
+  found by `-<threadId>.jsonl` filename suffix). Rehydrated events take seqs
+  `1..K` while `session.seq` keeps the persisted high-water mark — fresh clients
+  replay full history; clients that survived the restart (lastSeq ≥ K) keep
+  their richer local feed with no duplicates. A tab that was open across the
+  restart needs one refresh to see rehydrated history (its lastSeq exceeds the
+  backlog seqs by design). Known source-data limits: Fable transcripts store
+  thinking redacted (empty text + signature), so rehydrated history has no
+  thinking collapsibles; some pre-API-key Codex rollouts recorded no assistant
+  items at all (user turns only). Codex assistant text comes from
+  `response_item` message items — `event_msg agent_message` duplicates them and
+  is ignored; `event_msg user_message` is the only reliable user-turn record
+  (raw user response_items mix in injected context).
 
 ## Review history (all green)
 

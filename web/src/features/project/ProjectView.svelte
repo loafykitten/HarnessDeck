@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import "@xterm/xterm/css/xterm.css";
-  import { app, navigate, projectSessions, refreshCore } from "../../stores/state.svelte";
+  import { app, navigate, projectSessions, refreshCore, restartServer } from "../../stores/state.svelte";
   import { getChatSessionsStore, projectMode, setProjectMode } from "../../stores/chatSessions.svelte";
   import { api } from "../../lib/api";
   import { fmtAgo } from "../../utils/format";
@@ -189,6 +189,22 @@
   }
 
   const activeSession = $derived(mySessions.find(s => s.id === activeId));
+
+  // The server-restart pill lives on the header of the project the server runs
+  // from: it appears once commits touch server code the running process hasn't
+  // loaded, and disappears again after the restart.
+  const serverPending = $derived(
+    app.server !== null && projInfo?.dir === app.server.dir
+      && (app.serverRestarting || app.server.pendingFiles.length > 0));
+
+  function confirmRestart() {
+    const busy = app.server?.busyChats ?? [];
+    const message = busy.length > 0
+      ? `Restart the HarnessDeck server? ${busy.length === 1 ? "A chat is" : `${busy.length} chats are`} mid-turn (${busy.map(b => b.name).join(", ")}) and will be cut off — anything they finish is recovered from transcripts on the way back up.`
+      : "Restart the HarnessDeck server to apply the new code? Terminal sessions keep running; chats come back with their history.";
+    if (!confirm(message)) return;
+    void restartServer();
+  }
 </script>
 
 <div class="glass glow pv-head">
@@ -217,6 +233,17 @@
     {/if}
     {#if projInfo?.git?.worktrees.length}
       <span class="pill" title={projInfo.git.worktrees.map(w => w.branch).join(", ")}>{projInfo.git.worktrees.length} worktree{projInfo.git.worktrees.length === 1 ? "" : "s"}</span>
+    {/if}
+    {#if serverPending}
+      <button class="pill restart-pill" class:waiting={app.serverRestarting}
+        disabled={app.serverRestarting} onclick={confirmRestart}
+        title={app.server?.pendingFiles.join("\n")}>
+        {#if app.serverRestarting}
+          restarting…
+        {:else}
+          ⟳ restart to apply {app.server?.commitsBehind === 1 ? "1 commit" : `${app.server?.commitsBehind} commits`}
+        {/if}
+      </button>
     {/if}
   </div>
   {#if stack.length > 0}
@@ -343,6 +370,11 @@
     .pv-side .pv-metas{width:100%;justify-content:flex-start}
   }
   .stack-pill{color:var(--accent-2);border-color:var(--accent-2);background:var(--glass-2)}
+  .restart-pill{cursor:pointer;font:inherit;font-weight:600;color:var(--accent);
+    border-color:var(--accent);background:var(--glass-2);
+    box-shadow:0 0 16px -8px var(--accent);transition:box-shadow .18s}
+  .restart-pill:hover:not(:disabled){box-shadow:0 0 18px -4px var(--accent)}
+  .restart-pill.waiting{cursor:default;color:var(--ink-faint);border-color:var(--glass-brd);box-shadow:none}
   /* the pet's home: a full-width strip under the terminal + files row */
   .pet-home{flex:none;margin-top:14px;border-radius:15px;overflow:hidden;padding:0 10px}
   .pet-home :global(.mascot-track){margin-top:0}

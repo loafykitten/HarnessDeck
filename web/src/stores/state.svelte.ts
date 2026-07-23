@@ -1,5 +1,5 @@
 import { api } from "../lib/api";
-import type { Greeting, HarnessId, HarnessMeta, News, ProjectInfo, SessionInfo, Updates, Usage } from "../types/api";
+import type { Greeting, HarnessId, HarnessMeta, News, ProjectInfo, ServerStatus, SessionInfo, Updates, Usage } from "../types/api";
 import { petOrDefault, type PetId } from "../components/pets/pets";
 import { chime } from "../lib/sound";
 
@@ -19,6 +19,8 @@ export const app = $state({
   news: null as News | null,
   updates: null as Updates | null,
   updateChecking: false,
+  server: null as ServerStatus | null,
+  serverRestarting: false,
   // finished-update chips retire at these times, per harness
   jobDisplayUntil: { claude: null, codex: null } as Record<HarnessId, number | null>,
   railExpanded: false,
@@ -213,6 +215,40 @@ export async function refreshUsage() {
   }
 }
 
+let serverInFlight = false;
+
+export async function refreshServer() {
+  if (serverInFlight || app.serverRestarting) return;
+  serverInFlight = true;
+  try { app.server = await api.serverStatus(); }
+  catch (e) { console.error("refreshServer", e); }
+  finally { serverInFlight = false; }
+}
+
+/** Restart the server process (launchd respawns it), then hard-reload the page
+    so the SPA can never drift from the API it talks to. The caller has already
+    confirmed against the current busy list; those ids are sent as acknowledged,
+    so a chat that went busy since the dialog 409s instead of being severed. */
+export async function restartServer() {
+  if (app.serverRestarting) return;
+  const before = app.server?.bootedAt ?? 0;
+  app.serverRestarting = true;
+  try {
+    await api.restartServer(app.server?.busyChats.map(chat => chat.id) ?? []);
+  } catch (e) {
+    console.error("restartServer", e);
+    app.serverRestarting = false;
+    void refreshServer(); // a 409 means the busy set changed — reflect it
+    return;
+  }
+  const poll = setInterval(async () => {
+    try {
+      const status = await api.serverStatus();
+      if (status.bootedAt !== before) { clearInterval(poll); location.reload(); }
+    } catch { /* old process gone, new one not listening yet */ }
+  }, 700);
+}
+
 export async function refreshGreeting() {
   if (greetingInFlight) return;
   greetingInFlight = true;
@@ -348,10 +384,11 @@ export function startPolling() {
   api.harnesses().then(h => { if (h.length) app.harnesses = h; }).catch(console.error);
   api.appConfig().then(c => applyPet(c.pet)).catch(console.error);
   hydrateUsage();
-  refreshCore(); refreshNews();
+  refreshCore(); refreshNews(); refreshServer();
   if (app.route.view === "dash") catchUpDashboard();
   scheduleUsagePoll(); // server caches at 60s; 30s halves worst-case lag
   setInterval(refreshCore, 5_000);
+  setInterval(refreshServer, 30_000);
   setInterval(() => {
     if (app.route.view === "dash" && !document.hidden) refreshGreeting();
   }, GREETING_INTERVAL);
@@ -363,6 +400,7 @@ export function startPolling() {
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
       refreshCore();
+      refreshServer();
       if (app.route.view === "dash") refreshUsage();
     }
   });

@@ -1,8 +1,8 @@
 /** Typed fetch client for the HarnessDeck server API. */
 import type {
   AppConfig, CodexMode, Greeting, HarnessId, HarnessMeta, News,
-  ProjectInfo, ProjectStack, ProjectTree, SessionInfo, SkillDetail,
-  SkillJob, SkillSummary, Updates, UpdateJob, Usage,
+  ProjectInfo, ProjectStack, ProjectTree, ServerStatus, SessionInfo,
+  SkillDetail, SkillJob, SkillSummary, Updates, UpdateJob, Usage,
 } from "../types/api";
 import type { ChatEffort, ChatHarness, ChatModel, ChatPermissionMode, ChatSession } from "../types/chat";
 
@@ -53,6 +53,13 @@ export const api = {
     }),
   killSession: (id: string) =>
     j<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  serverStatus: () => j<ServerStatus>("/api/server/status"),
+  restartServer: (acknowledged: string[] = []) =>
+    j<{ restarting: boolean }>("/api/server/restart", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ acknowledged }),
+    }),
   usage: () => j<Usage>("/api/usage"),
   greeting: () => j<Greeting>("/api/greeting"),
   news: () => j<News>("/api/news"),

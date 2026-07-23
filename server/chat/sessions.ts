@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { claudeChatDriver } from "./claude";
 import { codexChatDriver } from "./codex";
+import { rehydrateHistory, usageTokens } from "./history";
 import { validateChatImagePaths } from "./images";
 import type {
   ChatEffort,
@@ -101,9 +102,39 @@ async function loadSessions(): Promise<void> {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error("load chat sessions", error);
     }
+    await Promise.all([...sessions.values()].map(session => rehydrate(session)));
     loaded = true;
   })();
   return loadPromise;
+}
+
+/** Rebuild the in-memory event feed from the harness's own transcript after a
+    restart. Rehydrated events take seqs 1..K while seq keeps the persisted
+    high-water mark, so fresh clients replay full history and clients that
+    survived the restart (lastSeq ≥ K) keep their richer local feed untouched. */
+async function rehydrate(session: InternalSession): Promise<void> {
+  if (!session.sdkSessionId || session.events.length) return;
+  try {
+    const history = await rehydrateHistory(
+      session.harness,
+      join(DEV_DIR, session.project),
+      session.sdkSessionId,
+    );
+    if (!history?.events.length) return;
+    const window = history.events.slice(-MAX_EVENTS);
+    // Truncation can cut between a tool start and its end; an end whose start
+    // fell outside the window would render as an input-less completed card.
+    const keptStarts = new Set(window
+      .filter(event => event.type === "tool" && event.phase === "start")
+      .map(event => (event as Extract<DriverEvent, { type: "tool" }>).id));
+    const events = window.filter(event =>
+      !(event.type === "tool" && event.phase === "end" && !keptStarts.has(event.id)));
+    session.events = events.map((event, index) => ({ ...event, seq: index + 1 } as ChatEvent));
+    session.seq = Math.max(session.seq, session.events.length);
+    if (session.harness === "claude" && history.totalTokens) session.totalTokens = history.totalTokens;
+  } catch (error) {
+    console.error("rehydrate chat history", session.id, error);
+  }
 }
 
 function persist(): Promise<void> {
@@ -132,15 +163,6 @@ function emit(session: InternalSession, event: DriverEvent): void {
   if (session.events.length > MAX_EVENTS) session.events.splice(0, session.events.length - MAX_EVENTS);
   for (const listener of session.listeners) listener(next);
   if (event.type === "status" || event.type === "result") void persist();
-}
-
-function usageTokens(usage: unknown): number {
-  if (!usage || typeof usage !== "object") return 0;
-  const values = usage as Record<string, unknown>;
-  return ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]
-    .reduce((total, key) => total + (typeof values[key] === "number" && Number.isFinite(values[key])
-      ? Math.max(0, values[key])
-      : 0), 0);
 }
 
 function ensureHandle(session: InternalSession): ChatHandle {
@@ -234,14 +256,34 @@ export function chatSessionHarness(id: string): ChatHarness | null {
   return sessions.get(id)?.harness ?? null;
 }
 
+/** Sessions with a turn in flight — the ones a server restart would sever. */
+export async function busyChatSessions(): Promise<{ id: string; name: string; project: string; status: ChatStatus }[]> {
+  await loadSessions();
+  return [...sessions.values()]
+    .filter(session => session.status !== "idle")
+    .map(session => ({ id: session.id, name: session.name, project: session.project, status: session.status }));
+}
+
 export function reportChatError(id: string, message: string): void {
   const session = sessions.get(id);
   if (session) emit(session, { type: "error", message });
 }
 
+let shuttingDown = false;
+
+/** Called when a restart has been accepted: new turns must not start in the
+    window between scheduling the exit and the process dying. */
+export function beginShutdown(): void {
+  shuttingDown = true;
+}
+
 export async function sendChatMessage(id: string, text: string, imagePaths: string[] = []): Promise<boolean> {
   const session = sessions.get(id);
   if (!session || (!text.trim() && !imagePaths.length)) return false;
+  if (shuttingDown) {
+    emit(session, { type: "error", message: "Server is restarting — send again in a moment." });
+    return false;
+  }
   try {
     const validatedPaths = await validateChatImagePaths(imagePaths);
     await ensureHandle(session).send(text.trim(), validatedPaths);

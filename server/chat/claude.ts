@@ -67,7 +67,7 @@ type PendingQuestion = {
 const parentId = (message: { parent_tool_use_id?: string | null }) =>
   message.parent_tool_use_id ?? undefined;
 
-const contentText = (content: unknown): string => {
+export const contentText = (content: unknown): string => {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return JSON.stringify(content) ?? String(content);
   return content.map(block => {

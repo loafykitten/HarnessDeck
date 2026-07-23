@@ -7,6 +7,7 @@ import { chatRoutes } from "./chat/routes";
 import { hasChatSession } from "./chat/sessions";
 import { chatWebsocket, type ChatWsData } from "./chat/ws";
 import { projectRoutes } from "./projects/routes";
+import { restartRoutes } from "./restart";
 import { usageRoutes } from "./usage/routes";
 import { skillRoutes } from "./skills/routes";
 import { configRoutes } from "./config/routes";
@@ -42,6 +43,7 @@ const routes: RouteHandler[] = [
   terminalRoutes,
   chatRoutes,
   harnessRoutes,
+  restartRoutes,
   usageRoutes,
   skillRoutes,
   configRoutes,
