@@ -4,6 +4,7 @@ import type {
   ProjectInfo, ProjectStack, ProjectTree, SessionInfo, SkillDetail,
   SkillJob, SkillSummary, Updates, UpdateJob, Usage,
 } from "../types/api";
+import type { ChatEffort, ChatHarness, ChatModel, ChatPermissionMode, ChatSession } from "../types/chat";
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
@@ -27,6 +28,18 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ project, name, harness }),
     }),
+  chatSessions: (project: string) =>
+    j<ChatSession[]>(`/api/chat/sessions?project=${encodeURIComponent(project)}`),
+  createChatSession: (input: {
+    project: string; name: string; harness: ChatHarness; model: ChatModel;
+    effort: ChatEffort; permissionMode: ChatPermissionMode;
+  }) => j<ChatSession>("/api/chat/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  }),
+  deleteChatSession: (id: string) =>
+    j<{ ok: boolean }>(`/api/chat/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   setCodexMode: (mode: CodexMode) =>
     j<{ mode: CodexMode; configText: string }>("/api/codex/mode", {
       method: "PUT",

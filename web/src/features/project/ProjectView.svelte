@@ -7,6 +7,7 @@
   import type { HarnessId } from "../../types/api";
   import FileTree from "./FileTree.svelte";
   import Terminal from "./Terminal.svelte";
+  import Chat from "./chat/Chat.svelte";
   import Mascot from "../../components/pets/Mascot.svelte";
 
   let { project }: { project: string } = $props();
@@ -34,6 +35,16 @@
   let filesCollapsed = $state(localStorage.getItem("hd-files-collapsed") === "1");
   let fileTree = $state<{ refresh: () => Promise<void> } | null>(null);
   let refreshing = $state(false);
+  let columnMode = $state<"terminal" | "chat">("terminal");
+
+  $effect(() => {
+    columnMode = localStorage.getItem(`hd-project-mode:${project}`) === "chat" ? "chat" : "terminal";
+  });
+
+  function setColumnMode(mode: "terminal" | "chat") {
+    columnMode = mode;
+    localStorage.setItem(`hd-project-mode:${project}`, mode);
+  }
 
   onMount(async () => {
     try { stack = (await api.projectStack(project)).stack; } catch { /* header works without stack metadata */ }
@@ -241,7 +252,15 @@
     tabindex="0" onpointerdown={startResize} onkeydown={resizeKeydown}></div>
 
   <div class="term-col">
-    {#if mySessions.length > 0}
+    <div class="column-mode glass" role="group" aria-label="Project workspace mode">
+      <button class:on={columnMode === "terminal"} aria-pressed={columnMode === "terminal"}
+        onclick={() => setColumnMode("terminal")}>Terminal</button>
+      <button class:on={columnMode === "chat"} aria-pressed={columnMode === "chat"}
+        onclick={() => setColumnMode("chat")}>Chat</button>
+    </div>
+    {#if columnMode === "chat"}
+      <Chat {project} branch={projInfo?.git?.branch} />
+    {:else if mySessions.length > 0}
       <div class="glass term">
         <div class="term-bar">
           <div class="tl"><i></i><i></i><i></i></div>

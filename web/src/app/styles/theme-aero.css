@@ -110,6 +110,9 @@
   background:linear-gradient(180deg,rgba(255,255,255,.10),transparent 16%)}
 :root[data-theme="aero"] .term-view .xterm .xterm-rows{text-shadow:none}
 :root[data-theme="aero"] .skill-editor{text-shadow:none}
+:root[data-theme="aero"] .thinking-card,
+:root[data-theme="aero"] .tool-card,
+:root[data-theme="aero"] .subagent-card{background:rgba(255,255,255,.4)}
 
 /* accent-colored text: the gel hues are gorgeous as chrome but too pale to
    read on the light sky — swap in deepened versions for anything textual */

@@ -1,7 +1,11 @@
+import type { WebSocketHandler } from "bun";
 import { err, json, serveStatic, type RouteHandler } from "./http";
 import { hasSession } from "./terminal/sessions";
 import { terminalRoutes } from "./terminal/routes";
-import { terminalWebsocket, type WsData } from "./terminal/ws";
+import { terminalWebsocket, type WsData as TerminalWsData } from "./terminal/ws";
+import { chatRoutes } from "./chat/routes";
+import { hasChatSession } from "./chat/sessions";
+import { chatWebsocket, type ChatWsData } from "./chat/ws";
 import { projectRoutes } from "./projects/routes";
 import { usageRoutes } from "./usage/routes";
 import { skillRoutes } from "./skills/routes";
@@ -11,11 +15,30 @@ import { getGreeting } from "./greeting";
 import { getNews } from "./news/news";
 import { ensureTailscaleServe } from "./tailscale";
 
-const PORT = 4553;
+const PORT = Number(process.env.PORT) || 4553;
+
+type WsData = TerminalWsData | ChatWsData;
+
+const websocket: WebSocketHandler<WsData> = {
+  idleTimeout: 960,
+  open(ws) {
+    if ("chatId" in ws.data) chatWebsocket.open?.(ws as never);
+    else terminalWebsocket.open?.(ws as never);
+  },
+  async message(ws, message) {
+    if ("chatId" in ws.data) await chatWebsocket.message?.(ws as never, message);
+    else await terminalWebsocket.message?.(ws as never, message);
+  },
+  close(ws, code, reason) {
+    if ("chatId" in ws.data) chatWebsocket.close?.(ws as never, code, reason);
+    else terminalWebsocket.close?.(ws as never, code, reason);
+  },
+};
 
 const routes: RouteHandler[] = [
   projectRoutes,
   terminalRoutes,
+  chatRoutes,
   harnessRoutes,
   usageRoutes,
   skillRoutes,
@@ -45,6 +68,14 @@ const server = Bun.serve<WsData>({
       return err("websocket upgrade failed", 400);
     }
 
+    const chatMatch = pathname.match(/^\/ws\/chat\/([^/]+)$/);
+    if (chatMatch) {
+      const chatId = decodeURIComponent(chatMatch[1]);
+      if (!(await hasChatSession(chatId))) return err("no such chat session", 404);
+      if (server.upgrade(req, { data: { chatId } })) return undefined as unknown as Response;
+      return err("websocket upgrade failed", 400);
+    }
+
     try {
       for (const route of routes) {
         const res = await route(req, url);
@@ -58,10 +89,12 @@ const server = Bun.serve<WsData>({
     }
   },
 
-  websocket: terminalWebsocket,
+  websocket,
 });
 
 console.log(`HarnessDeck → http://localhost:${server.port} (loopback only)`);
-ensureTailscaleServe(PORT).then(url => {
-  if (url) console.log(`              ⤷ tailnet ${url}`);
-});
+if (PORT === 4553) {
+  ensureTailscaleServe(PORT).then(url => {
+    if (url) console.log(`              ⤷ tailnet ${url}`);
+  });
+}
