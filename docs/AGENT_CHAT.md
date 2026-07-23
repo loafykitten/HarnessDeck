@@ -125,7 +125,14 @@ the lid closed — don't schedule GUI-automation runs unattended): chat layout
 round trip all pass with zero console errors; real Safari verified the
 dashboard render before the run wedged. The pass caught one bug: codex replies
 were labeled "Claude" (hardcoded in FeedEntry/ChatFeed) — fixed, labels are
-harness-aware now.
+harness-aware now. The three remaining code-traced-only paths were then
+exercised live and pass: app-server kill → error surfaces, next send respawns
+and resumes the same thread; interrupt mid-stream → idle in ~14ms, interrupt
+while idle → immediate idle; queueing a message during a pending approval
+keeps the card's Allow/Deny buttons and runs the queued message after the
+approval resolves. (The only untestable sliver is the 2s interrupt fallback
+timer itself — it fires only if app-server drops `turn/completed`, which a
+healthy server never does.)
 
 ## Open items
 

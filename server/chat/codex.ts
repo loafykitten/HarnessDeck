@@ -689,8 +689,10 @@ class CodexChatHandle implements ChatHandle {
     if (this.stopped) return;
     this.stopped = true;
     this.dead = true;
-    const detail = this.stderrText.trim();
-    const error = new Error(detail || `codex app-server exited with code ${code}`);
+    const detail = this.stderrText.trim().slice(-400);
+    const error = new Error(detail
+      ? `codex app-server exited with code ${code}: ${detail}`
+      : `codex app-server exited with code ${code}`);
     for (const request of this.pendingRpc.values()) request.reject(error);
     this.pendingRpc.clear();
     this.pendingApprovals.clear();
