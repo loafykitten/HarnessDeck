@@ -7,6 +7,7 @@
   import { fmtAgo } from "../../utils/format";
   import type { HarnessId } from "../../types/api";
   import FileTree from "./FileTree.svelte";
+  import SessionTabs from "./SessionTabs.svelte";
   import Terminal from "./Terminal.svelte";
   import Chat from "./chat/Chat.svelte";
   import Mascot from "../../components/pets/Mascot.svelte";
@@ -38,6 +39,24 @@
     if (routeSession && sessions.some(s => s.id === routeSession)) return routeSession;
     return sessions[0]?.id ?? null;
   });
+
+  const sessionTabs = $derived(columnMode === "chat"
+    ? chatSessions.sessions.map(session => ({
+        id: session.id,
+        name: session.name,
+        harness: session.harness,
+        status: session.status,
+        activity: session.lastActivity,
+        closeLabel: `Delete ${session.name}`,
+      }))
+    : mySessions.map(session => ({
+        id: session.id,
+        name: session.name,
+        harness: session.harness,
+        status: session.status,
+        activity: session.activity,
+        closeLabel: "Kill session",
+      })));
 
   function selectTab(id: string) {
     navigate({ view: "project", name: project, session: id });
@@ -170,8 +189,6 @@
   }
 
   const activeSession = $derived(mySessions.find(s => s.id === activeId));
-
-  const STATUS_LABEL = { working: "working", waiting: "needs you", idle: "idle" } as const;
 </script>
 
 <div class="glass glow pv-head">
@@ -214,46 +231,15 @@
 
 <div class="term-wrap">
   <div class="side-col" style:width="{sideWidth}px">
-  <div class="tabs" role="tablist" aria-orientation="vertical">
+  <SessionTabs sessions={sessionTabs} {activeId} onSelect={selectTab}
+    onClose={(session) => columnMode === "chat"
+      ? closeChat(session.id, session.name)
+      : closeSession(session.id)}>
     {#if columnMode === "chat"}
-      {#each chatSessions.sessions as s (s.id)}
-        <div class="tab" class:active={s.id === activeId}
-          role="tab" tabindex="0" aria-selected={s.id === activeId}
-          onclick={() => selectTab(s.id)}
-          onkeydown={(e) => e.key === "Enter" && selectTab(s.id)}>
-          {#if s.id === activeId}<span class="tab-nub" aria-hidden="true"><i></i></span>{/if}
-          <span class="tdot {s.status}"></span>
-          <span class="tab-info">
-            <span class="tab-name">{s.name}</span>
-            <span class="tab-meta"><span class="hx {s.harness}">{s.harness}</span> <span class="st {s.status}">{STATUS_LABEL[s.status]}</span></span>
-            <span class="tab-time">{fmtAgo(s.lastActivity)}</span>
-          </span>
-          <span class="tab-x" role="button" tabindex="0" aria-label={`Delete ${s.name}`}
-            onclick={(e) => { e.stopPropagation(); closeChat(s.id, s.name); }}
-            onkeydown={(e) => e.key === "Enter" && (e.stopPropagation(), closeChat(s.id, s.name))}>✕</span>
-        </div>
-      {/each}
       <div class="tab new" role="button" tabindex="0"
         onclick={() => chatSessions.showForm = true}
         onkeydown={(e) => e.key === "Enter" && (chatSessions.showForm = true)}>+ new chat</div>
     {:else}
-      {#each mySessions as s (s.id)}
-        <div class="tab" class:active={s.id === activeId}
-          role="tab" tabindex="0" aria-selected={s.id === activeId}
-          onclick={() => selectTab(s.id)}
-          onkeydown={(e) => e.key === "Enter" && selectTab(s.id)}>
-          {#if s.id === activeId}<span class="tab-nub" aria-hidden="true"><i></i></span>{/if}
-          <span class="tdot {s.status}"></span>
-          <span class="tab-info">
-            <span class="tab-name">{s.name}</span>
-            <span class="tab-meta"><span class="hx {s.harness}">{s.harness}</span> <span class="st {s.status}">{STATUS_LABEL[s.status]}</span></span>
-            <span class="tab-time">{fmtAgo(s.activity)}</span>
-          </span>
-          <span class="tab-x" role="button" tabindex="0" aria-label="Kill session"
-            onclick={(e) => { e.stopPropagation(); closeSession(s.id); }}
-            onkeydown={(e) => e.key === "Enter" && (e.stopPropagation(), closeSession(s.id))}>✕</span>
-        </div>
-      {/each}
       {#if naming}
         <div class="tab new naming">
           <!-- svelte-ignore a11y_autofocus -->
@@ -278,7 +264,7 @@
       {/if}
       {#if createError}<div class="tab" style="color:#ff5f57">{createError}</div>{/if}
     {/if}
-  </div>
+  </SessionTabs>
 
   {#if filesCollapsed}
     <button class="glass files-slim" title="Show files" aria-label="Show files"
