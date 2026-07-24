@@ -128,8 +128,8 @@ arbitrary code by design — it must never listen beyond 127.0.0.1.
 5. ✅ Config view (greeting prefs, settings.json, CLAUDE.md) · ✅ Skills view
    (list/edit `~/.claude/skills`, install from git/zip URL, generate via
    headless `claude -p` background job, delete)
-6. ✅ LaunchAgent (`com.fenn.claude-command`, RunAtLoad+KeepAlive,
-   logs → `~/Library/Logs/claude-command.log`) · ⬜ polish pass
+6. ✅ LaunchAgent (`com.fenn.harness-deck`, RunAtLoad+KeepAlive,
+   logs → `~/Library/Logs/harness-deck.log`) · ⬜ polish pass
 
 ## Implementation notes (learned the hard way)
 - tmux mangles control chars (incl. `\t`) to `_` in `-F` output — use `|` separators.
