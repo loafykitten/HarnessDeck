@@ -1,4 +1,7 @@
 <script lang="ts">
+  import PermissionDetail from "./PermissionDetail.svelte";
+  import { toolLook } from "../../../lib/tools";
+
   let { toolName, input, resolved, respond }: {
     toolName: string;
     input: Record<string, unknown>;
@@ -7,11 +10,18 @@
   } = $props();
   let denying = $state(false);
   let message = $state("");
+
+  let look = $derived(toolLook(toolName));
 </script>
 
-<div class="approval-card">
-  <div class="request-title"><span class="tdot waiting"></span><b>{toolName}</b> needs permission</div>
-  <pre>{JSON.stringify(input, null, 2)}</pre>
+<div class="approval-card" data-kind={look.kind}>
+  <div class="request-title">
+    <span class="perm-glyph">{look.glyph}</span>
+    <b>{toolName}</b>
+    <span class="request-sub">needs permission</span>
+    {#if !resolved}<span class="tdot waiting"></span>{/if}
+  </div>
+  <PermissionDetail {input} />
   {#if resolved}
     <div class="request-resolved" class:denied={resolved === "denied"}
       class:dismissed={resolved === "dismissed"}>{resolved}</div>

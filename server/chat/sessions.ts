@@ -45,6 +45,9 @@ export interface ChatSession {
   status: ChatStatus;
   costUsd: number;
   totalTokens: number;
+  /** Context occupancy of the latest turn; persisted so it survives restarts. */
+  contextUsed?: number;
+  contextWindow?: number | null;
   created: number;
   lastActivity: number;
 }
@@ -75,6 +78,8 @@ const view = (session: InternalSession): ChatSession => ({
   status: session.status,
   costUsd: session.costUsd,
   totalTokens: session.totalTokens,
+  contextUsed: session.contextUsed,
+  contextWindow: session.contextWindow,
   created: session.created,
   lastActivity: session.lastActivity,
 });
@@ -158,6 +163,10 @@ function emit(session: InternalSession, event: DriverEvent): void {
   if (event.type === "result") {
     session.costUsd = event.costUsd;
     if (session.harness === "claude") session.totalTokens = usageTokens(event.usage);
+    if (event.context) {
+      session.contextUsed = event.context.used;
+      session.contextWindow = event.context.window;
+    }
   }
   session.events.push(next);
   if (session.events.length > MAX_EVENTS) session.events.splice(0, session.events.length - MAX_EVENTS);

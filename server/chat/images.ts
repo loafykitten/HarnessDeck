@@ -3,7 +3,12 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { mkdir, readdir, realpath, stat, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 
-export const CHAT_PASTE_DIR = join(homedir(), "Library", "Caches", "HarnessDeck", "pastes");
+// Chat pastes live in their own subdirectory, apart from terminal pastes:
+// terminal names are guessable (`paste-<timestamp>`, no uuid) so the GET
+// route must never be able to reach them, and the terminal pruner deletes
+// any `paste-*` file in ITS directory after 24h (it skips subdirectories),
+// which would break our 30-day retention.
+export const CHAT_PASTE_DIR = join(homedir(), "Library", "Caches", "HarnessDeck", "pastes", "chat");
 // Chat images are base64-inlined into API requests (unlike terminal pastes,
 // which only pass a file path). The Claude API caps images at 10 MB encoded
 // (≈7.5 MB raw) and requests at 32 MB total, and anything over 2576px long
@@ -40,6 +45,20 @@ export async function saveChatImage(blob: Blob, extension: string): Promise<stri
   return path;
 }
 
+/**
+ * Resolve a paste basename (as carried on a `block` event) to an on-disk path,
+ * or null when it fails validation. Reuses the same hardened checks as sending.
+ */
+export async function resolveChatImage(name: string): Promise<string | null> {
+  if (!name || basename(name) !== name) return null;
+  try {
+    const [path] = await validateChatImagePaths([join(CHAT_PASTE_DIR, name)]);
+    return path ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function validateChatImagePaths(paths: string[]): Promise<string[]> {
   if (!paths.length) return [];
   const pasteDir = await realpath(CHAT_PASTE_DIR);
@@ -61,8 +80,12 @@ export async function validateChatImagePaths(paths: string[]): Promise<string[]>
   }));
 }
 
+// Pastes are rendered inline in the chat feed, so they have to outlive the
+// message that referenced them — a 24h window made older transcripts 404.
+const IMAGE_RETENTION_MS = 30 * 24 * 60 * 60_000;
+
 async function pruneOldChatImages(): Promise<void> {
-  const cutoff = Date.now() - 24 * 60 * 60_000;
+  const cutoff = Date.now() - IMAGE_RETENTION_MS;
   const entries = await readdir(CHAT_PASTE_DIR, { withFileTypes: true });
   await Promise.all(entries.flatMap(entry => {
     if (!entry.isFile() || !entry.name.startsWith("paste-")) return [];

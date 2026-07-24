@@ -271,7 +271,7 @@ export class ChatConnection {
           current.streaming = false;
           this.inFlightStreams.delete(streamKey);
         }
-        this.feed.push({ id, type: "message", role: event.role, text: event.content, parentToolUseId: event.parentToolUseId });
+        this.feed.push({ id, type: "message", role: event.role, text: event.content, images: event.images, parentToolUseId: event.parentToolUseId });
       }
     } else if (event.type === "tool") {
       const existing = this.feed.find(item => item.type === "tool" && item.toolId === event.id);
@@ -305,6 +305,12 @@ export class ChatConnection {
         this.session.costUsd = event.costUsd;
         if (!this.replayingInit && this.session.harness === "claude") {
           this.session.totalTokens = usageTokens(event.usage);
+        }
+        // Context occupancy comes precomputed by the driver; replay is fine
+        // to apply since the latest event always wins.
+        if (event.context) {
+          this.session.contextUsed = event.context.used;
+          this.session.contextWindow = event.context.window;
         }
       }
     } else if (event.type === "error") {

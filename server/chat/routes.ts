@@ -8,6 +8,7 @@ import {
 import {
   chatImageExtension,
   MAX_CHAT_IMAGE_BYTES,
+  resolveChatImage,
   saveChatImage,
 } from "./images";
 import {
@@ -63,6 +64,16 @@ export const chatRoutes: RouteHandler = async (req, url) => {
     if (blob.size > MAX_CHAT_IMAGE_BYTES) return err("image too large (max 5 MB)", 413);
     const path = await saveChatImage(blob, extension);
     return json({ ok: true, path });
+  }
+  // Serves a pasted image back to the feed. The basename is an unguessable
+  // uuid and the bytes never change, so it caches immutably.
+  const pasteMatch = url.pathname.match(/^\/api\/chat\/pastes\/([^/]+)$/);
+  if (pasteMatch && req.method === "GET") {
+    const path = await resolveChatImage(decodeURIComponent(pasteMatch[1]));
+    if (!path) return err("no such image", 404);
+    return new Response(Bun.file(path), {
+      headers: { "cache-control": "private, max-age=31536000, immutable" },
+    });
   }
   const match = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)$/);
   if (match && req.method === "DELETE") {

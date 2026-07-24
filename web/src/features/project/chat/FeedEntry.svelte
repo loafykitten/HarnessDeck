@@ -3,6 +3,7 @@
   import type { ChatFeedItem } from "../../../types/chat";
   import ApprovalCard from "./ApprovalCard.svelte";
   import Markdown from "./Markdown.svelte";
+  import MessageImages from "./MessageImages.svelte";
   import QuestionCard from "./QuestionCard.svelte";
   import ToolCard from "./ToolCard.svelte";
 
@@ -18,11 +19,15 @@
 {#if item.type === "message"}
   <article class="chat-message {item.role}">
     <div class="message-role">{item.role === "user" ? "You" : agentLabel}</div>
-    <Markdown text={item.text} />
+    {#if item.text}<Markdown text={item.text} />{/if}
+    {#if item.images?.length}<MessageImages images={item.images} />{/if}
   </article>
 {:else if item.type === "thinking"}
-  <details class="thinking-card" bind:open={thinkingOpen}>
-    <summary>{item.streaming ? "Thinking…" : "Thinking"}</summary>
+  <details class="thinking-chip" class:streaming={item.streaming} bind:open={thinkingOpen}>
+    <summary>
+      <span class="think-dot"></span>
+      <span class="think-label">{item.streaming ? "Thinking" : "Thought"}</span>
+    </summary>
     <Markdown text={item.text} />
   </details>
 {:else if item.type === "tool"}

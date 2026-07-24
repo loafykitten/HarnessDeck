@@ -32,8 +32,17 @@ export interface ChatSession {
   status: ChatStatus;
   costUsd: number;
   totalTokens: number;
+  /** Current context occupancy: tokens in the window as of the last turn. */
+  contextUsed?: number;
+  /** Context window size reported by the harness; null when unknown. */
+  contextWindow?: number | null;
   created: number;
   lastActivity: number;
+}
+
+export interface ChatContext {
+  used: number;
+  window: number | null;
 }
 
 export interface ChatQuestion {
@@ -46,13 +55,13 @@ export interface ChatQuestion {
 type Sequenced = { seq: number };
 export type ChatEvent = Sequenced & (
   | { type: "delta"; kind: "text" | "thinking"; text: string; parentToolUseId?: string }
-  | { type: "block"; role: "user" | "assistant"; content: string; parentToolUseId?: string }
+  | { type: "block"; role: "user" | "assistant"; content: string; images?: string[]; parentToolUseId?: string }
   | { type: "tool"; phase: "start" | "end"; id: string; name: string; input?: unknown; result?: unknown; isError?: boolean; parentToolUseId?: string }
   | { type: "permission_request"; id: string; toolName: string; input: Record<string, unknown>; suggestions?: unknown[] }
   | { type: "question_request"; id: string; questions: ChatQuestion[] }
   | { type: "request_resolved"; id: string; outcome: RequestOutcome }
   | { type: "status"; status: ChatStatus }
-  | { type: "result"; costUsd: number; usage: unknown; durationMs: number }
+  | { type: "result"; costUsd: number; usage: unknown; durationMs: number; context?: ChatContext }
   | { type: "error"; message: string }
 );
 
@@ -72,7 +81,7 @@ export type ChatClientMessage =
   | { type: "ping" };
 
 export type ChatFeedItem =
-  | { id: string; type: "message"; role: "user" | "assistant"; text: string; streaming?: boolean; parentToolUseId?: string }
+  | { id: string; type: "message"; role: "user" | "assistant"; text: string; images?: string[]; streaming?: boolean; parentToolUseId?: string }
   | { id: string; type: "thinking"; text: string; streaming?: boolean; parentToolUseId?: string }
   | { id: string; type: "tool"; toolId: string; name: string; input?: unknown; result?: unknown; isError?: boolean; running: boolean; parentToolUseId?: string }
   | { id: string; type: "permission"; requestId: string; toolName: string; input: Record<string, unknown>; resolved?: string }

@@ -1,7 +1,9 @@
-import { readdir } from "node:fs/promises";
+import { mkdir, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { contentText } from "./claude";
+import { CHAT_PASTE_DIR, chatImageExtension, MAX_CHAT_IMAGE_BYTES } from "./images";
 import type { ChatHarness, DriverEvent } from "./driver";
 
 /* Rebuilds a session's visible history from the harness's own on-disk record —
@@ -71,6 +73,27 @@ const SYNTHETIC_USER_PREFIXES = [
 const isSyntheticUserText = (text: string): boolean =>
   SYNTHETIC_USER_PREFIXES.some(prefix => text.startsWith(prefix));
 
+/**
+ * The harness transcript retains attached images as base64; write them back
+ * into the paste dir so rehydrated messages render them like live ones.
+ * Content-addressed names make repeated restarts idempotent (and re-writing
+ * refreshes the mtime, so retention restarts with each rehydrate).
+ */
+async function materializeImage(mediaType: string, data: string): Promise<string | null> {
+  const extension = chatImageExtension(mediaType);
+  if (!extension) return null;
+  const bytes = Buffer.from(data, "base64");
+  if (!bytes.length || bytes.length > MAX_CHAT_IMAGE_BYTES) return null;
+  const name = `paste-rh-${createHash("sha256").update(bytes).digest("hex").slice(0, 32)}${extension}`;
+  try {
+    await mkdir(CHAT_PASTE_DIR, { recursive: true });
+    await Bun.write(join(CHAT_PASTE_DIR, name), bytes);
+    return name;
+  } catch {
+    return null;
+  }
+}
+
 const claudeTranscriptPath = (cwd: string, sessionId: string): string =>
   join(homedir(), ".claude", "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"), `${sessionId}.jsonl`);
 
@@ -106,7 +129,8 @@ async function rehydrateClaude(cwd: string, sessionId: string): Promise<Rehydrat
       }
       if (!Array.isArray(content)) continue;
       const texts: string[] = [];
-      let images = 0;
+      const imageNames: string[] = [];
+      let lostImages = 0;
       for (const block of content as Record<string, unknown>[]) {
         if (block.type === "tool_result" && typeof block.tool_use_id === "string") {
           events.push({
@@ -121,16 +145,28 @@ async function rehydrateClaude(cwd: string, sessionId: string): Promise<Rehydrat
         } else if (block.type === "text" && typeof block.text === "string" && !isSyntheticUserText(block.text)) {
           texts.push(block.text);
         } else if (block.type === "image") {
-          images += 1;
+          const source = block.source as Record<string, unknown> | undefined;
+          const name = source?.type === "base64"
+            && typeof source.media_type === "string" && typeof source.data === "string"
+            ? await materializeImage(source.media_type, source.data)
+            : null;
+          if (name) imageNames.push(name);
+          else lostImages += 1;
         }
       }
       const text = texts.join("\n").trim();
-      if (text) events.push({ type: "block", role: "user", content: text });
-      else if (images) {
+      if (text || imageNames.length) {
         events.push({
           type: "block",
           role: "user",
-          content: images === 1 ? "Attached an image" : `Attached ${images} images`,
+          content: text,
+          images: imageNames.length ? imageNames : undefined,
+        });
+      } else if (lostImages) {
+        events.push({
+          type: "block",
+          role: "user",
+          content: lostImages === 1 ? "Attached an image" : `Attached ${lostImages} images`,
         });
       }
     }
@@ -216,6 +252,30 @@ async function rehydrateCodex(threadId: string): Promise<RehydratedHistory | nul
       continue;
     }
     if (entry.type !== "response_item") continue;
+    // User response_items mix real input with injected context, so they're
+    // not used for text — but they are the only record of attached images.
+    // Materialize any input_image data URLs and attach them to the matching
+    // user_message block (adjacent in the rollout), or emit standalone.
+    if (payload.type === "message" && payload.role === "user" && Array.isArray(payload.content)) {
+      const names: string[] = [];
+      for (const block of payload.content as Record<string, unknown>[]) {
+        if (block.type !== "input_image" || typeof block.image_url !== "string") continue;
+        const url = block.image_url;
+        const sep = url.indexOf(";base64,");
+        if (!url.startsWith("data:image/") || sep < 0) continue;
+        const name = await materializeImage(url.slice(5, sep), url.slice(sep + 8));
+        if (name) names.push(name);
+      }
+      if (names.length) {
+        // The event_msg user_message and this response_item copy are written
+        // back-to-back; only attach when that adjacency actually holds, so a
+        // surprising ordering can't pin images to an older message.
+        const last = events.at(-1);
+        if (last?.type === "block" && last.role === "user" && !last.images) last.images = names;
+        else events.push({ type: "block", role: "user", content: "", images: names });
+      }
+      continue;
+    }
     if (payload.type === "message" && payload.role === "assistant" && Array.isArray(payload.content)) {
       const text = (payload.content as Record<string, unknown>[])
         .map(block => typeof block.text === "string" ? block.text : "")

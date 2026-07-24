@@ -41,6 +41,7 @@
   } from "../../../types/chat";
   import type { ChatDraft } from "../../../stores/chatSessions.svelte";
   import type { PendingChatImage } from "../../../stores/chat.svelte";
+  import { fmtTokens } from "../../../utils/format";
 
   let {
     project, draft, session, status, connected, attachments, uploadingImages, attachmentError,
@@ -74,6 +75,14 @@
   let filesFailedAt = 0;
   const FILE_RETRY_MS = 5_000;
   const canSend = $derived(connected && session !== null);
+  // Context meter: only render once the harness has reported a window size.
+  const ctxPct = $derived.by(() => {
+    const used = session?.contextUsed;
+    const window = session?.contextWindow;
+    if (used === undefined || !window) return null;
+    return Math.min(100, Math.round((used / window) * 100));
+  });
+  const ctxFree = $derived(Math.max(0, (session?.contextWindow ?? 0) - (session?.contextUsed ?? 0)));
   const canSubmit = $derived(canSend && uploadingImages === 0 && (draft.text.trim().length > 0 || attachments.length > 0));
   const idlePlaceholder = $derived(session?.harness === "codex" ? "Message Codex…" : "Message Claude…");
   const mentionOpen = $derived(mentionStart !== null);
@@ -300,6 +309,12 @@
         <option value="default">default</option><option value="plan">plan</option><option value="acceptEdits">accept edits</option><option value="bypassPermissions" disabled={!session?.canBypassPermissions}>skip approvals</option>
       </select></label>
     </div>
+    {#if ctxPct !== null}
+      <div class="ctx-meter" class:warn={ctxPct >= 70} class:crit={ctxPct >= 90}
+        title="{fmtTokens(session?.contextUsed ?? 0)} used · {fmtTokens(ctxFree)} free of {fmtTokens(session?.contextWindow ?? 0)}">
+        <span>ctx</span><i><b style:width="{ctxPct}%"></b></i><em>{ctxPct}%</em>
+      </div>
+    {/if}
     {#if status === "working"}
       <button class="interrupt" onclick={interrupt}>Interrupt</button>
     {/if}

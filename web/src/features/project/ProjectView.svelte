@@ -258,6 +258,13 @@
 
 <div class="term-wrap">
   <div class="side-col" style:width="{sideWidth}px">
+  <div class="column-mode glass" role="group" aria-label="Project workspace mode">
+    <button class:on={columnMode === "terminal"} aria-pressed={columnMode === "terminal"}
+      onclick={() => selectMode("terminal")}>Terminal</button>
+    <button class:on={columnMode === "chat"} aria-pressed={columnMode === "chat"}
+      onclick={() => selectMode("chat")}>Chat</button>
+  </div>
+
   <SessionTabs sessions={sessionTabs} {activeId} onSelect={selectTab}
     onClose={(session) => columnMode === "chat"
       ? closeChat(session.id, session.name)
@@ -318,12 +325,6 @@
     tabindex="0" onpointerdown={startResize} onkeydown={resizeKeydown}></div>
 
   <div class="term-col">
-    <div class="column-mode glass" role="group" aria-label="Project workspace mode">
-      <button class:on={columnMode === "terminal"} aria-pressed={columnMode === "terminal"}
-        onclick={() => selectMode("terminal")}>Terminal</button>
-      <button class:on={columnMode === "chat"} aria-pressed={columnMode === "chat"}
-        onclick={() => selectMode("chat")}>Chat</button>
-    </div>
     {#if columnMode === "chat"}
       <Chat {project} branch={projInfo?.git?.branch} {activeId} />
     {:else if mySessions.length > 0}

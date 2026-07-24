@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import {
   query,
   type CanUseTool,
@@ -178,8 +179,10 @@ class ClaudeChatHandle implements ChatHandle {
         },
       });
     }
-    const displayText = text || (imagePaths.length === 1 ? "Attached an image" : `Attached ${imagePaths.length} images`);
-    this.emit({ type: "block", role: "user", content: displayText });
+    // Carry the paste basenames so the feed can render the images inline.
+    // They are unguessable ids and keep the absolute homedir path off the wire.
+    const images = imagePaths.map(path => basename(path));
+    this.emit({ type: "block", role: "user", content: text, images: images.length ? images : undefined });
     if (!this.pending.size) this.emit({ type: "status", status: "working" });
     this.input.push({
       type: "user",
@@ -347,6 +350,7 @@ class ClaudeChatHandle implements ChatHandle {
         costUsd: message.total_cost_usd,
         usage: message.usage,
         durationMs: message.duration_ms,
+        context: claudeContext(message.usage, message.modelUsage),
       });
       if (message.subtype !== "success") {
         this.emit({ type: "error", message: message.errors.join("\n") || message.subtype });
@@ -354,6 +358,35 @@ class ClaudeChatHandle implements ChatHandle {
       this.emit({ type: "status", status: "idle" });
     }
   }
+}
+
+/** Context occupancy from a result: the final request's tokens, with the
+    window size taken from the dominant model's usage entry (subagent models
+    also appear in modelUsage; the main model has by far the most input). */
+function claudeContext(usage: unknown, modelUsage: unknown): { used: number; window: number | null } {
+  let used = 0;
+  if (usage && typeof usage === "object") {
+    const values = usage as Record<string, unknown>;
+    for (const key of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
+      const value = values[key];
+      if (typeof value === "number" && Number.isFinite(value)) used += Math.max(0, value);
+    }
+  }
+  let window: number | null = null;
+  let dominantInput = -1;
+  if (modelUsage && typeof modelUsage === "object") {
+    for (const entry of Object.values(modelUsage as Record<string, unknown>)) {
+      if (!entry || typeof entry !== "object") continue;
+      const model = entry as Record<string, unknown>;
+      const input = typeof model.inputTokens === "number" ? model.inputTokens : 0;
+      const cached = typeof model.cacheReadInputTokens === "number" ? model.cacheReadInputTokens : 0;
+      if (input + cached > dominantInput && typeof model.contextWindow === "number" && model.contextWindow > 0) {
+        dominantInput = input + cached;
+        window = model.contextWindow;
+      }
+    }
+  }
+  return { used, window };
 }
 
 export const claudeChatDriver: ChatDriver = {

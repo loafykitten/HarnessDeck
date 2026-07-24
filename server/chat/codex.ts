@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import type {
   ClientNotification,
   ClientRequest,
@@ -235,8 +236,9 @@ class CodexChatHandle implements ChatHandle {
       this.emit({ type: "error", message: error instanceof Error ? error.message : String(error) });
       return;
     }
-    const displayText = text || (imagePaths.length === 1 ? "Attached an image" : `Attached ${imagePaths.length} images`);
-    this.emit({ type: "block", role: "user", content: displayText });
+    // Carry the paste basenames so the feed can render the images inline.
+    const images = imagePaths.map(path => basename(path));
+    this.emit({ type: "block", role: "user", content: text, images: images.length ? images : undefined });
     if (!this.pendingApprovals.size) this.emit({ type: "status", status: "working" });
     this.queue.push({ text, imageUrls });
     void this.pump();
@@ -582,7 +584,12 @@ class CodexChatHandle implements ChatHandle {
     }
     this.lastErrorMessage = null;
     const durationMs = params.turn.durationMs ?? Math.max(0, Date.now() - this.turnStartedAt);
-    this.emit({ type: "result", costUsd: 0, usage: this.latestUsage, durationMs });
+    // `last` is the final request of the turn — its total is the context
+    // occupancy; `total` accumulates across turns and would overcount.
+    const context = this.latestUsage
+      ? { used: Math.max(0, this.latestUsage.last.totalTokens), window: this.latestUsage.modelContextWindow }
+      : undefined;
+    this.emit({ type: "result", costUsd: 0, usage: this.latestUsage, durationMs, context });
     if (this.activeTurnId === params.turn.id) this.activeTurnId = null;
     this.latestUsage = null;
     this.dismissPendingApprovals();

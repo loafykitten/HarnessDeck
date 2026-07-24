@@ -40,15 +40,21 @@ export interface ChatQuestion {
   multiSelect: boolean;
 }
 
+/** Context-window occupancy as of the latest turn. */
+export interface ChatContext {
+  used: number;
+  window: number | null;
+}
+
 export type DriverEvent =
   | { type: "delta"; kind: "text" | "thinking"; text: string; parentToolUseId?: string }
-  | { type: "block"; role: "user" | "assistant"; content: string; parentToolUseId?: string }
+  | { type: "block"; role: "user" | "assistant"; content: string; images?: string[]; parentToolUseId?: string }
   | { type: "tool"; phase: "start" | "end"; id: string; name: string; input?: unknown; result?: unknown; isError?: boolean; parentToolUseId?: string }
   | { type: "permission_request"; id: string; toolName: string; input: Record<string, unknown>; suggestions?: unknown[] }
   | { type: "question_request"; id: string; questions: ChatQuestion[] }
   | { type: "request_resolved"; id: string; outcome: RequestOutcome }
   | { type: "status"; status: ChatStatus }
-  | { type: "result"; costUsd: number; usage: unknown; durationMs: number }
+  | { type: "result"; costUsd: number; usage: unknown; durationMs: number; context?: ChatContext }
   | { type: "error"; message: string };
 
 export interface ChatHandle {
