@@ -300,17 +300,23 @@ export class ChatConnection {
       }
     } else if (event.type === "status") {
       this.setStatus(event.status);
+    } else if (event.type === "context") {
+      // Live mid-turn occupancy so the meter stays current while working.
+      if (this.session) {
+        this.session.contextUsed = event.context.used;
+        if (event.context.window !== null) this.session.contextWindow = event.context.window;
+      }
     } else if (event.type === "result") {
       if (this.session) {
         this.session.costUsd = event.costUsd;
         if (!this.replayingInit && this.session.harness === "claude") {
           this.session.totalTokens = usageTokens(event.usage);
         }
-        // Context occupancy comes precomputed by the driver; replay is fine
-        // to apply since the latest event always wins.
-        if (event.context) {
+        // Skip during replay: live context events are not buffered, so the
+        // init snapshot is newer than any replayed result and must win.
+        if (event.context && !this.replayingInit) {
           this.session.contextUsed = event.context.used;
-          this.session.contextWindow = event.context.window;
+          if (event.context.window !== null) this.session.contextWindow = event.context.window;
         }
       }
     } else if (event.type === "error") {

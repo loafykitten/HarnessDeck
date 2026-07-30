@@ -54,6 +54,7 @@ export type DriverEvent =
   | { type: "question_request"; id: string; questions: ChatQuestion[] }
   | { type: "request_resolved"; id: string; outcome: RequestOutcome }
   | { type: "status"; status: ChatStatus }
+  | { type: "context"; context: ChatContext }
   | { type: "result"; costUsd: number; usage: unknown; durationMs: number; context?: ChatContext }
   | { type: "error"; message: string };
 

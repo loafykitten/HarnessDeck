@@ -160,16 +160,25 @@ function emit(session: InternalSession, event: DriverEvent): void {
   const next = { ...event, seq: ++session.seq } as ChatEvent;
   session.lastActivity = Date.now();
   if (event.type === "status") session.status = event.status;
+  if (event.type === "context") {
+    session.contextUsed = event.context.used;
+    // Keep a known window when an update arrives before the driver learns it.
+    if (event.context.window !== null) session.contextWindow = event.context.window;
+  }
   if (event.type === "result") {
     session.costUsd = event.costUsd;
     if (session.harness === "claude") session.totalTokens = usageTokens(event.usage);
     if (event.context) {
       session.contextUsed = event.context.used;
-      session.contextWindow = event.context.window;
+      if (event.context.window !== null) session.contextWindow = event.context.window;
     }
   }
-  session.events.push(next);
-  if (session.events.length > MAX_EVENTS) session.events.splice(0, session.events.length - MAX_EVENTS);
+  // Context updates are frequent and fully captured by the session view;
+  // keeping them out of the buffer stops them displacing replayable content.
+  if (event.type !== "context") {
+    session.events.push(next);
+    if (session.events.length > MAX_EVENTS) session.events.splice(0, session.events.length - MAX_EVENTS);
+  }
   for (const listener of session.listeners) listener(next);
   if (event.type === "status" || event.type === "result") void persist();
 }

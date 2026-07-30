@@ -512,6 +512,14 @@ class CodexChatHandle implements ChatHandle {
     }
     if (message.method === "thread/tokenUsage/updated") {
       this.latestUsage = message.params.tokenUsage;
+      // Surface occupancy live so the meter tracks the turn as it runs.
+      this.emit({
+        type: "context",
+        context: {
+          used: Math.max(0, this.latestUsage.last.totalTokens),
+          window: this.latestUsage.modelContextWindow,
+        },
+      });
       return;
     }
     if (message.method === "turn/completed") {

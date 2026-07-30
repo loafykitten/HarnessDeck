@@ -95,6 +95,10 @@ class ClaudeChatHandle implements ChatHandle {
   private stopped = false;
   private continuationId?: string;
   private interruptFallback: ReturnType<typeof setTimeout> | null = null;
+  /** Tokens in the window as of the latest top-level API request. */
+  private contextUsed: number | null = null;
+  /** Window size from the latest result's modelUsage; carried across turns. */
+  private contextWindow: number | null = null;
 
   constructor(private options: ChatStartOptions) {
     this.continuationId = options.continuationId;
@@ -279,6 +283,28 @@ class ClaudeChatHandle implements ChatHandle {
     this.emit({ type: "status", status: "idle" });
   }
 
+  /** Ask the CLI for its own context breakdown to seed used/window before the
+      first turn completes. Best-effort: the control request is experimental,
+      and the meter falls back to per-request usage and result data. */
+  private async seedContext(): Promise<void> {
+    try {
+      const usage = await this.sdk.getContextUsage();
+      if (this.stopped) return;
+      const window = usage.rawMaxTokens > 0 ? usage.rawMaxTokens : usage.maxTokens > 0 ? usage.maxTokens : null;
+      if (window !== null) this.contextWindow = window;
+      // An assistant response may have landed while the request was in flight;
+      // its per-request figure is newer, so only fill the gap.
+      if (this.contextUsed === null && Number.isFinite(usage.totalTokens) && usage.totalTokens >= 0) {
+        this.contextUsed = usage.totalTokens;
+      }
+      if (this.contextUsed !== null) {
+        this.emit({ type: "context", context: { used: this.contextUsed, window: this.contextWindow } });
+      }
+    } catch {
+      // Older CLI or transport hiccup — the meter appears at the first result.
+    }
+  }
+
   private async consume(): Promise<void> {
     try {
       for await (const message of this.sdk) this.handleMessage(message);
@@ -295,6 +321,12 @@ class ClaudeChatHandle implements ChatHandle {
       this.continuationId = message.session_id;
       this.options.onContinuationId?.(message.session_id);
     }
+    if (message.type === "system" && message.subtype === "init") {
+      // Seed the meter before the first result: a resumed session already has
+      // context, and the window size is otherwise unknown until a turn ends.
+      void this.seedContext();
+      return;
+    }
     if (message.type === "stream_event") {
       const event = message.event as unknown as Record<string, unknown>;
       if (event.type !== "content_block_delta" || !event.delta || typeof event.delta !== "object") return;
@@ -308,6 +340,16 @@ class ClaudeChatHandle implements ChatHandle {
       return;
     }
     if (message.type === "assistant") {
+      // Each top-level assistant message is one API response whose usage counts
+      // the full context of that request — the live occupancy. Subagent messages
+      // (parent_tool_use_id set) run in their own windows and are skipped.
+      if (parentId(message) === undefined) {
+        const used = requestTokens(message.message.usage);
+        if (used !== null) {
+          this.contextUsed = used;
+          this.emit({ type: "context", context: { used, window: this.contextWindow } });
+        }
+      }
       for (const block of message.message.content) {
         if (block.type === "text") {
           this.emit({ type: "block", role: "assistant", content: block.text, parentToolUseId: parentId(message) });
@@ -345,12 +387,19 @@ class ClaudeChatHandle implements ChatHandle {
     if (message.type === "result") {
       if (this.interruptFallback) clearTimeout(this.interruptFallback);
       this.interruptFallback = null;
+      const window = dominantWindow(message.modelUsage);
+      if (window !== null) this.contextWindow = window;
       this.emit({
         type: "result",
         costUsd: message.total_cost_usd,
         usage: message.usage,
         durationMs: message.duration_ms,
-        context: claudeContext(message.usage, message.modelUsage),
+        // NOT message.usage: the result usage accumulates every request in the
+        // turn, so each one re-counts the whole context (cache reads included)
+        // and a long turn reports several times the real occupancy.
+        context: this.contextUsed !== null
+          ? { used: this.contextUsed, window: this.contextWindow }
+          : undefined,
       });
       if (message.subtype !== "success") {
         this.emit({ type: "error", message: message.errors.join("\n") || message.subtype });
@@ -360,18 +409,27 @@ class ClaudeChatHandle implements ChatHandle {
   }
 }
 
-/** Context occupancy from a result: the final request's tokens, with the
-    window size taken from the dominant model's usage entry (subagent models
-    also appear in modelUsage; the main model has by far the most input). */
-function claudeContext(usage: unknown, modelUsage: unknown): { used: number; window: number | null } {
-  let used = 0;
-  if (usage && typeof usage === "object") {
-    const values = usage as Record<string, unknown>;
-    for (const key of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
-      const value = values[key];
-      if (typeof value === "number" && Number.isFinite(value)) used += Math.max(0, value);
+/** Tokens of a single API request's usage — the context that request occupied.
+    Null when the message carries no usable usage (defensive: replayed or
+    synthetic messages). */
+function requestTokens(usage: unknown): number | null {
+  if (!usage || typeof usage !== "object") return null;
+  const values = usage as Record<string, unknown>;
+  let total = 0;
+  let seen = false;
+  for (const key of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
+    const value = values[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      total += Math.max(0, value);
+      seen = true;
     }
   }
+  return seen ? total : null;
+}
+
+/** Window size from the dominant model's usage entry (subagent models also
+    appear in modelUsage; the main model has by far the most input). */
+function dominantWindow(modelUsage: unknown): number | null {
   let window: number | null = null;
   let dominantInput = -1;
   if (modelUsage && typeof modelUsage === "object") {
@@ -386,7 +444,7 @@ function claudeContext(usage: unknown, modelUsage: unknown): { used: number; win
       }
     }
   }
-  return { used, window };
+  return window;
 }
 
 export const claudeChatDriver: ChatDriver = {
