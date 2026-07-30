@@ -5,6 +5,7 @@
   import Markdown from "./Markdown.svelte";
   import MessageImages from "./MessageImages.svelte";
   import QuestionCard from "./QuestionCard.svelte";
+  import QuestionToolCard from "./QuestionToolCard.svelte";
   import ToolCard from "./ToolCard.svelte";
 
   let { item, permission, question, agentLabel = "Claude" }: {
@@ -31,7 +32,11 @@
     <Markdown text={item.text} />
   </details>
 {:else if item.type === "tool"}
-  <ToolCard name={item.name} input={item.input} result={item.result} isError={item.isError} running={item.running} />
+  {#if item.name === "AskUserQuestion"}
+    <QuestionToolCard input={item.input} result={item.result} isError={item.isError} running={item.running} />
+  {:else}
+    <ToolCard name={item.name} input={item.input} result={item.result} isError={item.isError} running={item.running} />
+  {/if}
 {:else if item.type === "permission"}
   <ApprovalCard toolName={item.toolName} input={item.input} resolved={item.resolved}
     respond={(behavior, always, message) => permission(item.requestId, behavior, always, message)} />

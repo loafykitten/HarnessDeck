@@ -1,4 +1,4 @@
-export type ToolKind = "read" | "write" | "run" | "search" | "web" | "agent" | "todo" | "other";
+export type ToolKind = "read" | "write" | "run" | "search" | "web" | "agent" | "todo" | "question" | "other";
 
 /** Tool name → visual identity, shared by action rows and permission prompts. */
 const KINDS: [RegExp, ToolKind, string][] = [
@@ -9,6 +9,7 @@ const KINDS: [RegExp, ToolKind, string][] = [
   [/^(WebFetch|WebSearch)$/i, "web", "◈"],
   [/^(Agent|Task)$/i, "agent", "✦"],
   [/^(TodoWrite|Task(Create|Update|List|Get))$/i, "todo", "☰"],
+  [/^AskUserQuestion$/i, "question", "?"],
 ];
 
 export function toolLook(name: string): { kind: ToolKind; glyph: string } {

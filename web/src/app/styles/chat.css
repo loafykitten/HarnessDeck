@@ -98,9 +98,20 @@
 .tool-row[data-kind="web"]{--tool-accent:var(--accent-2)}
 .tool-row[data-kind="agent"]{--tool-accent:var(--accent)}
 .tool-row[data-kind="todo"]{--tool-accent:var(--ink-faint)}
+.tool-row[data-kind="question"]{--tool-accent:var(--accent)}
 .tool-row.error{--tool-accent:var(--bad);border-color:rgba(var(--bad-rgb),.3)}
 .tool-row pre{margin:0 9px 9px}
 .tool-row .tool-result{border-color:rgba(var(--ok-rgb),.25)}
+
+/* AskUserQuestion expanded: quiet Q→A pairs instead of the JSON payload */
+.qa-list{display:flex;flex-direction:column;gap:9px;padding:2px 11px 10px}
+.qa-item{display:flex;flex-direction:column;gap:2px;min-width:0}
+.qa-header{font:700 9px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.09em;color:var(--accent)}
+.qa-question{font-size:12px;line-height:1.45;color:var(--ink)}
+.qa-answer{font:11px ui-monospace,monospace;color:var(--ok)}
+.qa-answer::before{content:"→ ";opacity:.7}
+.qa-answer.pending{color:var(--ink-faint)}
+.qa-list pre{margin:0}
 @media (prefers-reduced-motion:reduce){
   .thinking-chip.streaming .think-dot,.thinking-chip.streaming .think-label,.tool-live{animation:none;opacity:.9}
 }
