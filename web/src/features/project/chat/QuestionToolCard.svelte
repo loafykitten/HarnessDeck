@@ -23,13 +23,18 @@
   });
 
   // The result is prose: `Your questions have been answered: "Q"="A", …`.
-  // Lift the pairs out; anything unparseable falls back to the raw text.
+  // Lift the pairs out. The formatter doesn't escape quotes, so a quoted
+  // question or answer can break its pair — whenever any question is left
+  // without a parsed answer, the raw text is shown too, so nothing the user
+  // chose can silently disappear behind a partial parse.
   const answers = $derived.by(() => {
     if (typeof result !== "string") return new Map<string, string>();
     return new Map([...result.matchAll(/"([^"]+)"="([^"]*)"/g)].map(match => [match[1], match[2]]));
   });
   const unparsed = $derived(
-    typeof result === "string" && result && answers.size === 0 ? result : null);
+    typeof result === "string" && result && !running
+      && (questions.length === 0 || questions.some(asked => !answers.has(asked.question)))
+      ? result : null);
 
   const arg = $derived(questions.length === 0 ? ""
     : questions.length === 1 ? questions[0].question

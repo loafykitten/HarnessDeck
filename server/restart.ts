@@ -29,21 +29,27 @@ const bootedCommit = await git("rev-parse", "HEAD");
    any source file newer than dist/index.html means the bundle is behind. */
 
 const WEB_DIR = join(REPO_ROOT, "web");
-const DIST_STAMP = join(WEB_DIR, "dist", "index.html");
-/** Inputs to the build; everything else under web/ is output or lockfiles. */
-const WEB_SOURCE_ROOTS = ["src", "public", "index.html", "vite.config.ts", "svelte.config.js", "package.json"];
+/** Written by scripts/compress.ts after a fully successful build:web; the
+    index.html fallback covers bundles built before the stamp existed. */
+const DIST_STAMP = join(WEB_DIR, "dist", ".built");
+const DIST_FALLBACK = join(WEB_DIR, "dist", "index.html");
+/** Inputs to build:web; everything else under web/ is output. */
+const WEB_SOURCE_ROOTS = ["src", "public", "scripts", "index.html", "vite.config.ts", "svelte.config.js", "package.json", "bun.lock"];
 
+/** Yields files AND directories: a deletion bumps only the parent dir's
+    mtime, so dirs must count as inputs for removals to read as stale. */
 async function* walk(dir: string): AsyncGenerator<string> {
   for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
     if (entry.name.startsWith(".")) continue; // .DS_Store and friends aren't build inputs
     const path = join(dir, entry.name);
+    yield path;
     if (entry.isDirectory()) yield* walk(path);
-    else yield path;
   }
 }
 
 async function webBuildState(): Promise<{ builtAt: number | null; stale: string[] }> {
-  const builtAt = await stat(DIST_STAMP).then(s => s.mtimeMs, () => null);
+  const builtAt = await stat(DIST_STAMP).then(s => s.mtimeMs, () => null)
+    ?? await stat(DIST_FALLBACK).then(s => s.mtimeMs, () => null);
   const stale: string[] = [];
   const consider = (path: string, mtime: number) => {
     if (builtAt === null || mtime > builtAt) stale.push(relative(REPO_ROOT, path));
@@ -52,7 +58,8 @@ async function webBuildState(): Promise<{ builtAt: number | null; stale: string[
     const rootPath = join(WEB_DIR, root);
     const info = await stat(rootPath).catch(() => null);
     if (!info) continue;
-    if (!info.isDirectory()) { consider(rootPath, info.mtimeMs); continue; }
+    consider(rootPath, info.mtimeMs);
+    if (!info.isDirectory()) continue;
     for await (const path of walk(rootPath)) {
       const entry = await stat(path).catch(() => null);
       if (entry) consider(path, entry.mtimeMs);

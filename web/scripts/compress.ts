@@ -19,3 +19,8 @@ async function compressDir(dir: string): Promise<void> {
 }
 
 await compressDir(DIST);
+
+// Success stamp: the server reads this file's mtime as "when the bundle was
+// last fully built". It lands only after vite AND compression succeed, so a
+// half-finished build (fresh index.html, stale/missing .gz) still reads stale.
+await Bun.write(join(DIST, ".built"), "");
