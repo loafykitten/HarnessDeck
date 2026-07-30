@@ -21,6 +21,7 @@ export const app = $state({
   updateChecking: false,
   server: null as ServerStatus | null,
   serverRestarting: false,
+  webRebuilding: false,
   // finished-update chips retire at these times, per harness
   jobDisplayUntil: { claude: null, codex: null } as Record<HarnessId, number | null>,
   railExpanded: false,
@@ -247,6 +248,21 @@ export async function restartServer() {
       if (status.bootedAt !== before) { clearInterval(poll); location.reload(); }
     } catch { /* old process gone, new one not listening yet */ }
   }, 700);
+}
+
+/** Rebuild the web bundle on the server, then hard-reload so the page runs the
+    assets it just built — the same no-drift rule as restartServer. */
+export async function rebuildWeb() {
+  if (app.webRebuilding) return;
+  app.webRebuilding = true;
+  try {
+    await api.rebuildWeb();
+    location.reload();
+  } catch (e) {
+    console.error("rebuildWeb", e);
+    app.webRebuilding = false;
+    void refreshServer();
+  }
 }
 
 export async function refreshGreeting() {

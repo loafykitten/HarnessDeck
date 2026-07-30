@@ -101,5 +101,7 @@ export interface ServerStatus {
   headCommit: string | null;
   commitsBehind: number;
   pendingFiles: string[];
+  /** Web bundle freshness: source files newer than the built dist, if any. */
+  web?: { builtAt: number | null; stale: string[] };
   busyChats: { id: string; name: string; project: string; status: string }[];
 }

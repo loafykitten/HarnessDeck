@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { readdir, stat } from "node:fs/promises";
+import { join, relative } from "node:path";
 import { beginShutdown, busyChatSessions } from "./chat/sessions";
 import { err, json, type RouteHandler } from "./http";
 
@@ -20,6 +21,79 @@ async function git(...args: string[]): Promise<string | null> {
 }
 
 const bootedCommit = await git("rev-parse", "HEAD");
+
+/* The web bundle is a build artifact: commits can land in web/ without anyone
+   running `bun run build`, and the site silently keeps serving yesterday's UI
+   (this happened — the subagent drill-in shipped in git but not in dist).
+   Staleness is measured by mtime, not commits, so uncommitted edits count too:
+   any source file newer than dist/index.html means the bundle is behind. */
+
+const WEB_DIR = join(REPO_ROOT, "web");
+const DIST_STAMP = join(WEB_DIR, "dist", "index.html");
+/** Inputs to the build; everything else under web/ is output or lockfiles. */
+const WEB_SOURCE_ROOTS = ["src", "public", "index.html", "vite.config.ts", "svelte.config.js", "package.json"];
+
+async function* walk(dir: string): AsyncGenerator<string> {
+  for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    if (entry.name.startsWith(".")) continue; // .DS_Store and friends aren't build inputs
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) yield* walk(path);
+    else yield path;
+  }
+}
+
+async function webBuildState(): Promise<{ builtAt: number | null; stale: string[] }> {
+  const builtAt = await stat(DIST_STAMP).then(s => s.mtimeMs, () => null);
+  const stale: string[] = [];
+  const consider = (path: string, mtime: number) => {
+    if (builtAt === null || mtime > builtAt) stale.push(relative(REPO_ROOT, path));
+  };
+  for (const root of WEB_SOURCE_ROOTS) {
+    const rootPath = join(WEB_DIR, root);
+    const info = await stat(rootPath).catch(() => null);
+    if (!info) continue;
+    if (!info.isDirectory()) { consider(rootPath, info.mtimeMs); continue; }
+    for await (const path of walk(rootPath)) {
+      const entry = await stat(path).catch(() => null);
+      if (entry) consider(path, entry.mtimeMs);
+    }
+  }
+  return { builtAt, stale: stale.sort() };
+}
+
+/** One build at a time; concurrent requests join the run already in flight. */
+let webBuild: Promise<{ ok: boolean; output: string }> | null = null;
+
+function runWebBuild(): Promise<{ ok: boolean; output: string }> {
+  webBuild ??= (async () => {
+    try {
+      const proc = Bun.spawn(["bun", "run", "build:web"], {
+        cwd: REPO_ROOT, stdout: "pipe", stderr: "pipe",
+      });
+      const [output, errors, code] = await Promise.all([
+        new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited,
+      ]);
+      return { ok: code === 0, output: (output + errors).slice(-4000) };
+    } finally {
+      webBuild = null;
+    }
+  })();
+  return webBuild;
+}
+
+/** Browser-reachable state-changing POSTs share restart's CSRF posture: a JSON
+    content-type forces a preflight this server never answers, and the Origin
+    check backstops it. */
+function guardBrowserPost(req: Request, url: URL): Response | null {
+  if (!(req.headers.get("content-type") ?? "").includes("application/json")) {
+    return err("requires a JSON body", 415);
+  }
+  const origin = req.headers.get("origin");
+  if (origin && URL.parse(origin)?.host !== url.host) {
+    return err("cross-origin request rejected", 403);
+  }
+  return null;
+}
 
 /* The project this server's code belongs to: the main checkout, even when the
    process was booted from a linked worktree (drift is still measured against
@@ -45,21 +119,22 @@ export const restartRoutes: RouteHandler = async (req, url) => {
       headCommit,
       commitsBehind,
       pendingFiles,
+      web: await webBuildState(),
       busyChats: await busyChatSessions(),
     });
+  }
+  if (url.pathname === "/api/server/rebuild-web" && req.method === "POST") {
+    const guarded = guardBrowserPost(req, url);
+    if (guarded) return guarded;
+    const result = await runWebBuild();
+    if (!result.ok) return json({ error: "web build failed", output: result.output }, 500);
+    return json({ ok: true, web: await webBuildState() });
   }
   if (url.pathname === "/api/server/restart" && req.method === "POST") {
     // A restart is a state-changing action reachable from the user's browser
     // (loopback + tailnet): refuse the no-preflight cross-origin shapes.
-    // Requiring a JSON content-type forces a CORS preflight, which fails here
-    // because this server never answers one; the Origin check backstops it.
-    if (!(req.headers.get("content-type") ?? "").includes("application/json")) {
-      return err("restart requires a JSON body", 415);
-    }
-    const origin = req.headers.get("origin");
-    if (origin && URL.parse(origin)?.host !== url.host) {
-      return err("cross-origin restart rejected", 403);
-    }
+    const guarded = guardBrowserPost(req, url);
+    if (guarded) return guarded;
     const body = await req.json().catch(() => null) as { force?: boolean; acknowledged?: string[] } | null;
     const acknowledged = new Set(Array.isArray(body?.acknowledged) ? body.acknowledged : []);
     const busy = await busyChatSessions();

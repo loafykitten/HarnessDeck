@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import "@xterm/xterm/css/xterm.css";
-  import { app, navigate, projectSessions, refreshCore, restartServer } from "../../stores/state.svelte";
+  import { app, navigate, projectSessions, rebuildWeb, refreshCore, restartServer } from "../../stores/state.svelte";
   import { getChatSessionsStore, projectMode, setProjectMode } from "../../stores/chatSessions.svelte";
   import { api } from "../../lib/api";
   import { fmtAgo } from "../../utils/format";
@@ -197,6 +197,12 @@
     app.server !== null && projInfo?.dir === app.server.dir
       && (app.serverRestarting || app.server.pendingFiles.length > 0));
 
+  // Sibling to the restart pill: the UI bundle is a build artifact, and edits
+  // to web/ (committed or not) don't reach the browser until someone rebuilds.
+  const webStale = $derived(
+    app.server !== null && projInfo?.dir === app.server.dir
+      && (app.webRebuilding || app.server.web?.builtAt === null || (app.server.web?.stale.length ?? 0) > 0));
+
   function confirmRestart() {
     const busy = app.server?.busyChats ?? [];
     const message = busy.length > 0
@@ -242,6 +248,22 @@
           restarting…
         {:else}
           ⟳ restart to apply {app.server?.commitsBehind === 1 ? "1 commit" : `${app.server?.commitsBehind} commits`}
+        {/if}
+      </button>
+    {/if}
+    {#if webStale}
+      {@const staleCount = app.server?.web?.stale.length ?? 0}
+      <button class="pill restart-pill" class:waiting={app.webRebuilding}
+        disabled={app.webRebuilding} onclick={() => rebuildWeb()}
+        title={app.server?.web?.builtAt === null
+          ? "The web bundle has never been built."
+          : `Edited since the last UI build:\n${app.server?.web?.stale.join("\n")}`}>
+        {#if app.webRebuilding}
+          rebuilding UI…
+        {:else if app.server?.web?.builtAt === null}
+          ✦ build UI
+        {:else}
+          ✦ rebuild UI to apply {staleCount === 1 ? "1 file" : `${staleCount} files`}
         {/if}
       </button>
     {/if}

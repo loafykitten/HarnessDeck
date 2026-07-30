@@ -60,6 +60,12 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ acknowledged }),
     }),
+  rebuildWeb: () =>
+    j<{ ok: boolean }>("/api/server/rebuild-web", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    }),
   usage: () => j<Usage>("/api/usage"),
   greeting: () => j<Greeting>("/api/greeting"),
   news: () => j<News>("/api/news"),
