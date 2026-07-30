@@ -19,6 +19,7 @@
   --accent-3-rgb:160,107,255;
   --glass:rgba(255,255,255,.055);
   --glass-2:rgba(255,255,255,.09);
+  --popover:rgba(26,12,46,.94); /* near-opaque surface for overlays above busy content */
   --glass-brd:rgba(255,255,255,.14);
   --glass-brd-lit:rgba(255,255,255,.30);
   --ink:#f4f0ff;
@@ -56,6 +57,7 @@
   --accent-rgb:255,94,143;
   --accent-2-rgb:255,77,77;
   --accent-3-rgb:255,119,170;
+  --popover:rgba(40,8,29,.94);
   --ok:#ffb14f;
   --ok-rgb:255,177,79;
   --shadow:rgba(200,30,80,.45);
@@ -83,6 +85,7 @@
   /* white-gloss glass */
   --glass:rgba(255,255,255,.42);
   --glass-2:rgba(255,255,255,.58);
+  --popover:rgba(255,255,255,.92);
   --glass-brd:rgba(255,255,255,.75);
   --glass-brd-lit:rgba(255,255,255,.95);
   /* dark ink on light sky — dim/faint stay firmly readable on white glass */
