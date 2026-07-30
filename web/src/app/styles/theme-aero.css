@@ -112,7 +112,7 @@
 :root[data-theme="aero"] .skill-editor{text-shadow:none}
 :root[data-theme="aero"] .thinking-chip,
 :root[data-theme="aero"] .tool-row,
-:root[data-theme="aero"] .subagent-card{background:rgba(255,255,255,.4)}
+:root[data-theme="aero"] .subagent-row,:root[data-theme="aero"] .agent-view-bar{background:rgba(255,255,255,.4)}
 
 /* accent-colored text: the gel hues are gorgeous as chrome but too pale to
    read on the light sky — swap in deepened versions for anything textual */

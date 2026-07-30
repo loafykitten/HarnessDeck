@@ -1,19 +1,28 @@
 <script lang="ts">
-  import { untrack } from "svelte";
   import type { ChatFeedItem } from "../../../types/chat";
-  import FeedEntry from "./FeedEntry.svelte";
+  import { asRecord, asString } from "../../../lib/tools";
 
-  let { group, permission, question }: {
-    group: { id: string; items: ChatFeedItem[]; running: boolean };
-    permission: (id: string, behavior: "allow" | "deny", always?: boolean, message?: string) => void;
-    question: (id: string, answers: Record<string, string[]>) => void;
+  let { group, open }: {
+    group: {
+      id: string;
+      items: ChatFeedItem[];
+      running: boolean;
+      task?: Extract<ChatFeedItem, { type: "tool" }>;
+    };
+    open: () => void;
   } = $props();
-  let open = $state(untrack(() => group.running));
+
+  const input = $derived(asRecord(group.task?.input));
+  const agentType = $derived(asString(input?.subagent_type) ?? "agent");
+  const description = $derived(asString(input?.description) ?? "");
+  const failed = $derived(!group.running && group.task?.isError === true);
 </script>
 
-<details class="subagent-card" bind:open>
-  <summary><span class:working={group.running}></span>subagent · {group.running ? "running" : "done"}</summary>
-  <div class="subagent-feed">
-    {#each group.items as item (item.id)}<FeedEntry {item} {permission} {question} />{/each}
-  </div>
-</details>
+<button class="subagent-row" class:failed onclick={open} title="View agent activity">
+  <span class="agent-dot" class:working={group.running}></span>
+  <span class="agent-glyph">✦</span>
+  <b class="agent-type">{agentType}</b>
+  {#if description}<span class="agent-desc">{description}</span>{/if}
+  <span class="agent-state">{group.running ? "working" : failed ? "failed" : "done"}</span>
+  <span class="agent-enter">›</span>
+</button>
