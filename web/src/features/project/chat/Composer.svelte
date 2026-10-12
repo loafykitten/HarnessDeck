@@ -299,13 +299,13 @@
   {#if attachmentError}<div class="attachment-notice error">{attachmentError}</div>{/if}
   <div class="composer-row">
     <div class="composer-options">
-      <label>model<select bind:value={model} onchange={() => setOptions({ model })}>
+      <label>model<select bind:value={model} disabled={!connected} onchange={() => setOptions({ model })}>
         {#each CHAT_MODELS[session?.harness ?? "claude"] as choice}<option value={choice}>{choice}</option>{/each}
       </select></label>
-      <label>effort<select bind:value={effort} onchange={() => setOptions({ effort })}>
+      <label>effort<select bind:value={effort} disabled={!connected} onchange={() => setOptions({ effort })}>
         {#each CHAT_EFFORTS[session?.harness ?? "claude"] as choice}<option value={choice}>{choice}</option>{/each}
       </select></label>
-      <label>mode<select bind:value={permissionMode} onchange={() => setOptions({ permissionMode })}>
+      <label>mode<select bind:value={permissionMode} disabled={!connected} onchange={() => setOptions({ permissionMode })}>
         <option value="default">default</option><option value="plan">plan</option><option value="acceptEdits">accept edits</option><option value="bypassPermissions" disabled={!session?.canBypassPermissions}>skip approvals</option>
       </select></label>
     </div>

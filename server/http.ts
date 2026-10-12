@@ -53,5 +53,40 @@ export async function serveStatic(req: Request, pathname: string): Promise<Respo
   return new Response("web/dist not built — run: bun run build", { status: 503 });
 }
 
+const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
+
+function hostnameOf(host: string): string | null {
+  try {
+    return new URL(`http://${host}`).hostname.replace(/\.$/, "");
+  } catch {
+    return null;
+  }
+}
+
+/** There's no login, so this is what stops other sites from driving the
+    terminals. Host must be one we serve under (defeats DNS rebinding: a
+    rebound evil.example still sends its own Host). Origin, which browsers
+    send on CORS fetches, every non-GET, and every WebSocket handshake, must
+    name that same host — a page elsewhere can't POST here or open a socket.
+    Requests without Origin are navigations, plain subresource GETs, or not
+    from a browser at all (curl, hooks), and are allowed. `extraHosts` are tailnet names/IPs and the
+    HARNESSDECK_ALLOWED_HOSTS override. Returns a rejection reason or null. */
+export function rejectUntrustedRequest(headers: Headers, extraHosts: ReadonlySet<string>): string | null {
+  const host = headers.get("host")?.toLowerCase();
+  const hostname = host ? hostnameOf(host) : null;
+  if (!host || !hostname) return "missing host";
+  const allowed = LOOPBACK_HOSTS.includes(hostname) || hostname.endsWith(".ts.net") || extraHosts.has(hostname);
+  if (!allowed) return `host not allowed: ${hostname}`;
+
+  const origin = headers.get("origin");
+  if (origin === null) return null;
+  try {
+    const o = new URL(origin);
+    // re-parse Host under Origin's scheme so a default port compares equal
+    if (new URL(`${o.protocol}//${host}`).host === o.host) return null;
+  } catch { /* "null" or garbage */ }
+  return "cross-origin request";
+}
+
 /** A feature's route handler: respond, or return null to pass. */
 export type RouteHandler = (req: Request, url: URL) => Promise<Response | null> | Response | null;

@@ -46,6 +46,8 @@ export class ChatConnection {
 
   private ws: WebSocket | null = null;
   private lastSeq = 0;
+  /** Server boot the feed was built from; see ChatInit.epoch. */
+  private epoch: string | null = null;
   private active = false;
   private disposed = false;
   private retryDelay = 1_000;
@@ -110,22 +112,27 @@ export class ChatConnection {
     return true;
   }
 
+  // A successful send() only queues bytes, so an answered card just goes to
+  // "sending"; only the server's request_resolved marks it resolved. If the
+  // socket drops first, onclose makes the controls live again.
   respondPermission(id: string, behavior: "allow" | "deny", always = false, message?: string): void {
+    if (!this.sendWs({ type: "permission_response", id, behavior, always, message })) return;
     const item = this.feed.find(entry => entry.type === "permission" && entry.requestId === id);
-    if (item?.type === "permission") item.resolved = behavior === "allow" ? (always ? "always allowed" : "allowed") : "denied";
-    this.sendWs({ type: "permission_response", id, behavior, always, message });
+    if (item?.type === "permission") item.sending = true;
   }
 
   respondQuestion(id: string, answers: Record<string, string[]>): void {
+    if (!this.sendWs({ type: "question_response", id, answers })) return;
     const item = this.feed.find(entry => entry.type === "question" && entry.requestId === id);
-    if (item?.type === "question") item.resolved = "answered";
-    this.sendWs({ type: "question_response", id, answers });
+    if (item?.type === "question") item.sending = true;
   }
 
+  // Applied optimistically so the selects feel instant; the server echoes the
+  // effective options back (an "options" event) and that is what sticks.
   setOptions(options: { model?: ChatModel; effort?: ChatEffort; permissionMode?: ChatPermissionMode }): void {
     if (options.permissionMode === "bypassPermissions" && !this.session?.canBypassPermissions) return;
+    if (!this.sendWs({ type: "set_options", ...options })) return;
     if (this.session) Object.assign(this.session, options);
-    this.sendWs({ type: "set_options", ...options });
   }
 
   interrupt(): void {
@@ -159,7 +166,17 @@ export class ChatConnection {
     this.ws = null;
     this.connected = false;
     this.reconnecting = false;
+    this.clearSending();
     socket?.close();
+  }
+
+  /** Answers still awaiting request_resolved may never have reached the
+      server; make those cards actionable again. If one did land, the
+      reconnect's replay resolves it. */
+  private clearSending(): void {
+    for (const item of this.feed) {
+      if ((item.type === "permission" || item.type === "question") && item.sending) item.sending = false;
+    }
   }
 
   private connect(): void {
@@ -179,11 +196,16 @@ export class ChatConnection {
       if (this.ws !== socket || typeof event.data !== "string") return;
       const message = JSON.parse(event.data) as ChatInit | ChatEvent;
       if (message.type === "init") {
-        if (message.seq < this.lastSeq) {
+        // A new epoch means the server restarted and rebuilt its backlog from
+        // the transcript with fresh seqs; merging by seq would drop whatever
+        // this feed missed while disconnected, so start over from the replay.
+        const restarted = this.epoch !== null && message.epoch !== this.epoch;
+        if (restarted || message.seq < this.lastSeq) {
           this.feed.length = 0;
           this.lastSeq = 0;
           this.inFlightStreams.clear();
         }
+        this.epoch = message.epoch;
         this.session = message.session;
         this.replayingInit = true;
         try {
@@ -199,6 +221,7 @@ export class ChatConnection {
       if (this.ws !== socket) return;
       this.ws = null;
       this.connected = false;
+      this.clearSending();
       if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
       if (!this.disposed && this.active) {
         this.reconnecting = true;
@@ -295,8 +318,15 @@ export class ChatConnection {
     } else if (event.type === "request_resolved") {
       const item = this.feed.find(entry =>
         (entry.type === "permission" || entry.type === "question") && entry.requestId === event.id);
-      if (item && (item.type === "permission" || item.type === "question") && !item.resolved) {
-        item.resolved = REQUEST_OUTCOME_LABELS[event.outcome];
+      if (item && (item.type === "permission" || item.type === "question")) {
+        item.sending = false;
+        if (!item.resolved) item.resolved = REQUEST_OUTCOME_LABELS[event.outcome];
+      }
+    } else if (event.type === "options") {
+      if (this.session) {
+        this.session.model = event.model;
+        this.session.effort = event.effort;
+        this.session.permissionMode = event.permissionMode;
       }
     } else if (event.type === "status") {
       this.setStatus(event.status);

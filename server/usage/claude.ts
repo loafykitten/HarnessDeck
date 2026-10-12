@@ -339,6 +339,36 @@ function sumClaudeModels(entries: any[]) {
   return [...byModel.entries()].map(([model, v]) => ({ model, ...v }));
 }
 
+/** ccusage runs unpinned via bunx, so a registry stall or a wedged parse
+    can hang it — and the in-flight promise every /api/usage request joins
+    would never settle. bunx runs ccusage as a child, so it gets its own
+    process group and the whole group is killed — killing bunx alone would
+    orphan the hung child. The deadline also races the read rather than
+    trusting the kill to close stdout. The rejection lets callers fall back
+    to their stale cache. */
+const CCUSAGE_TIMEOUT_MS = 60_000;
+export async function ccusageJson(args: string[]): Promise<any> {
+  const p = Bun.spawn(["bunx", "ccusage", ...args], { stdout: "pipe", stderr: "ignore", detached: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      try { process.kill(-p.pid, "SIGKILL"); } catch { /* already gone */ }
+      reject(new Error(`ccusage ${args[0]} timed out after ${CCUSAGE_TIMEOUT_MS / 1000}s`));
+    }, CCUSAGE_TIMEOUT_MS);
+  });
+  const read = (async () => {
+    const out = await new Response(p.stdout).text();
+    await p.exited;
+    return out;
+  })();
+  read.catch(() => {}); // a loser that rejects after the deadline isn't unhandled
+  try {
+    return JSON.parse(await Promise.race([read, deadline]));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const localYmd = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -363,13 +393,8 @@ async function computeMonth(): Promise<MonthUsage> {
   const start = cfg.renewalDay
     ? renewalFromDay(cfg.renewalDay, "prev")
     : new Date(now.getFullYear(), now.getMonth(), 1);
-  const p = Bun.spawn(
-    ["bunx", "ccusage", "claude", "daily", "--since", localYmd(start).replaceAll("-", ""), "--json"],
-    { stdout: "pipe", stderr: "ignore" },
-  );
-  const out = await new Response(p.stdout).text();
-  await p.exited;
-  const entries: any[] = JSON.parse(out).daily ?? [];
+  const res = await ccusageJson(["claude", "daily", "--since", localYmd(start).replaceAll("-", ""), "--json"]);
+  const entries: any[] = res.daily ?? [];
 
   // per-day Claude-only series, zero-filled so the chart shows quiet days too
   const byDay = new Map(entries.map(e => [String(e.period), sumClaudeModels([e])]));

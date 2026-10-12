@@ -66,7 +66,9 @@ export const chatWebsocket: WebSocketHandler<ChatWsData> = {
         if (isChatPermissionMode(permissionMode)) options.permissionMode = permissionMode;
         else reportChatError(id, `unknown permission mode: ${permissionMode}`);
       }
-      if (Object.keys(options).length) await setChatOptions(id, options);
+      // Even with nothing valid left, the call echoes the effective options
+      // back so the client drops whatever it applied optimistically.
+      await setChatOptions(id, options);
     } else if (message.type === "interrupt") {
       await interruptChat(id);
     }

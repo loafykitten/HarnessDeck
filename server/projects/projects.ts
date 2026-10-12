@@ -26,7 +26,11 @@ function transcriptSlug(dir: string): string {
 
 async function git(dir: string, ...args: string[]): Promise<string | null> {
   try {
-    const p = Bun.spawn(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    // This polls every project on a timer: never let repo config (fsmonitor,
+    // hooks) run a program on the server's behalf.
+    const p = Bun.spawn(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", ...args], {
+      cwd: dir, stdout: "pipe", stderr: "pipe",
+    });
     const [out, , code] = await Promise.all([
       new Response(p.stdout).text(),
       new Response(p.stderr).text(),

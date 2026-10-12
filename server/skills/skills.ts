@@ -1,6 +1,6 @@
-import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { lstat, mkdir, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join, normalize } from "node:path";
+import { basename, dirname, join, normalize, relative } from "node:path";
 import { DEFAULT_HARNESS, HARNESSES, HARNESS_IDS, isHarnessId, type HarnessId } from "../harness/registry";
 
 /** Skills are identified by NAME across harnesses: ~/.claude/skills/foo and
@@ -37,13 +37,38 @@ export async function skillOwners(name: string): Promise<HarnessId[]> {
   return owners;
 }
 
-/** Resolve a relative file path inside a skill dir, refusing escapes. */
-function safeFilePath(harness: HarnessId, name: string, rel: string): string | null {
+/** Resolve `rel` under `root` to its canonical path, or null if it escapes.
+    A lexical check isn't enough: git and unzip both recreate symlinks, so a
+    skill could ship `notes.md -> ~/.ssh/id_ed25519` and the file routes
+    would read or overwrite the target. Containment is judged against the
+    skill's OWN realpath'd root — the skill dir itself may legitimately be a
+    symlink to elsewhere. A path that doesn't exist yet is judged by its
+    nearest existing ancestor; a dangling link fails realpath and is refused
+    (writing through it would create the target wherever it points). */
+export async function containedPath(root: string, rel: string): Promise<string | null> {
+  const full = normalize(join(root, rel));
+  if (!full.startsWith(root + "/")) return null;
+  let realRoot: string;
+  try { realRoot = await realpath(root); } catch { return null; }
+  let probe = full;
+  while (!(await lstat(probe).then(() => true, () => false))) probe = dirname(probe);
+  let real: string;
+  try { real = await realpath(probe); } catch { return null; }
+  if (real !== realRoot && !real.startsWith(realRoot + "/")) return null;
+  // the missing tail can't contain links, so appending it stays contained
+  return join(real, relative(probe, full));
+}
+
+function safeFilePath(harness: HarnessId, name: string, rel: string): Promise<string | null> {
   const dir = skillPath(harness, name);
-  if (!dir) return null;
-  const full = normalize(join(dir, rel));
-  if (!full.startsWith(dir + "/") && full !== dir) return null;
-  return full;
+  return dir ? containedPath(dir, rel) : Promise.resolve(null);
+}
+
+/** SKILL.md text through the same containment as the file routes — the
+    listing and detail views surface its contents too. */
+async function readSkillMd(harness: HarnessId, name: string): Promise<string> {
+  const full = await safeFilePath(harness, name, "SKILL.md");
+  return full ? Bun.file(full).text().catch(() => "") : "";
 }
 
 export function parseFrontmatter(text: string): Record<string, string> {
@@ -98,7 +123,7 @@ export async function listSkills(): Promise<SkillSummary[]> {
         existing.harnesses.push(h);
         return null; // description/files come from the first owner
       }
-      const [text, files] = await Promise.all([md.text(), walkFiles(h, e.name)]);
+      const [text, files] = await Promise.all([readSkillMd(h, e.name), walkFiles(h, e.name)]);
       return {
         name: e.name,
         description: parseFrontmatter(text).description ?? "",
@@ -131,7 +156,9 @@ async function walkFiles(harness: HarnessId, name: string, sub = "", depth = 0):
     if (e.isDirectory()) {
       return walkFiles(harness, name, rel, depth + 1);
     }
-    const s = await stat(join(dir, rel));
+    // a dangling link would otherwise reject the whole listing
+    const s = await stat(join(dir, rel)).catch(() => null);
+    if (!s) return [];
     const ext = rel.slice(rel.lastIndexOf(".")).toLowerCase();
     return [{
       path: rel,
@@ -147,8 +174,7 @@ export async function getSkill(name: string) {
   const owners = await skillOwners(name);
   if (owners.length === 0) return null;
   const primary = owners[0];
-  const md = Bun.file(join(skillPath(primary, name)!, "SKILL.md"));
-  const [skillMd, files] = await Promise.all([md.text(), walkFiles(primary, name)]);
+  const [skillMd, files] = await Promise.all([readSkillMd(primary, name), walkFiles(primary, name)]);
   // SKILL.md first, then alphabetical
   files.sort((a, b) =>
     (a.path === "SKILL.md" ? -1 : b.path === "SKILL.md" ? 1 : a.path.localeCompare(b.path)));
@@ -164,7 +190,7 @@ export async function getSkill(name: string) {
 
 export async function readSkillFile(name: string, rel: string): Promise<string | null> {
   for (const h of await skillOwners(name)) {
-    const full = safeFilePath(h, name, rel);
+    const full = await safeFilePath(h, name, rel);
     if (!full) return null;
     const f = Bun.file(full);
     if (await f.exists()) return f.text();
@@ -182,7 +208,7 @@ export async function writeSkillFile(name: string, rel: string, content: string)
   const paths: string[] = [];
   let exists = false;
   for (const h of owners) {
-    const full = safeFilePath(h, name, rel);
+    const full = await safeFilePath(h, name, rel);
     if (!full) return false;
     paths.push(full);
     if (await Bun.file(full).exists()) exists = true;

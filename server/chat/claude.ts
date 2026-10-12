@@ -93,6 +93,7 @@ class ClaudeChatHandle implements ChatHandle {
   private toolNames = new Map<string, string>();
   private sdk: Query;
   private stopped = false;
+  dead = false;
   private continuationId?: string;
   private interruptFallback: ReturnType<typeof setTimeout> | null = null;
   /** Tokens in the window as of the latest top-level API request. */
@@ -183,6 +184,9 @@ class ClaudeChatHandle implements ChatHandle {
         },
       });
     }
+    // The SDK may have exited while the images were read; its input queue is
+    // closed by then and the message would vanish under a "working" status.
+    if (this.stopped) throw new Error("Claude session ended — send the message again.");
     // Carry the paste basenames so the feed can render the images inline.
     // They are unguessable ids and keep the absolute homedir path off the wire.
     const images = imagePaths.map(path => basename(path));
@@ -270,17 +274,28 @@ class ClaudeChatHandle implements ChatHandle {
 
   async stop(): Promise<void> {
     if (this.stopped) return;
+    this.teardown("Session stopped");
+    this.emit({ type: "status", status: "idle" });
+  }
+
+  /** Mark the handle dead so the registry starts a fresh one on the next
+      send, and release anything still waiting on this one. */
+  private teardown(reason: string): void {
     this.stopped = true;
+    this.dead = true;
     if (this.interruptFallback) clearTimeout(this.interruptFallback);
     this.interruptFallback = null;
     this.input.end();
     for (const [id, request] of this.pending) {
       if (!this.pending.delete(id)) continue;
-      request.resolve({ behavior: "deny", message: "Session stopped", toolUseID: request.toolUseId });
+      request.resolve({ behavior: "deny", message: reason, toolUseID: request.toolUseId });
       this.emit({ type: "request_resolved", id, outcome: "dismissed" });
     }
-    this.sdk.close();
-    this.emit({ type: "status", status: "idle" });
+    try {
+      this.sdk.close();
+    } catch {
+      // Already closed — the iterator ending is what brought us here.
+    }
   }
 
   /** Ask the CLI for its own context breakdown to seed used/window before the
@@ -306,14 +321,18 @@ class ClaudeChatHandle implements ChatHandle {
   }
 
   private async consume(): Promise<void> {
+    let failure: string | null = null;
     try {
       for await (const message of this.sdk) this.handleMessage(message);
     } catch (error) {
-      if (!this.stopped) {
-        this.emit({ type: "error", message: error instanceof Error ? error.message : String(error) });
-        this.emit({ type: "status", status: "idle" });
-      }
+      failure = error instanceof Error ? error.message : String(error);
     }
+    // The input queue never ends on its own, so any exit we didn't ask for
+    // means the CLI is gone; a handle left alive would swallow later sends.
+    if (this.stopped) return;
+    this.teardown("Session ended");
+    this.emit({ type: "error", message: failure ?? "Claude session ended unexpectedly" });
+    this.emit({ type: "status", status: "idle" });
   }
 
   private handleMessage(message: SDKMessage): void {

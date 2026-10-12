@@ -18,6 +18,14 @@
   const meta = $derived(app.harnesses.find(h => h.id === harness) ?? app.harnesses[0]);
   const isJson = $derived(meta.settingsFormat === "json");
 
+  // Which harness the buffers above actually hold, and whether each part
+  // loaded. `harness` flips on click but the buffers only change when the
+  // fetch lands — saving in between (or after a failed load, which leaves
+  // "") would write one harness's text into the other's file, or blank it.
+  let loaded = $state<{ harness: HarnessId; settings: boolean; md: boolean } | null>(null);
+  const canSaveSettings = $derived(loaded?.harness === harness && loaded.settings);
+  const canSaveMd = $derived(loaded?.harness === harness && loaded.md);
+
   let codexMode = $state<CodexMode | null>(null);
   let codexModeBusy = $state(false);
 
@@ -33,6 +41,7 @@
     if (requested !== harness) return;
     settingsText = s.status === "fulfilled" ? s.value : "";
     md = m.status === "fulfilled" ? m.value : "";
+    loaded = { harness: requested, settings: s.status === "fulfilled", md: m.status === "fulfilled" };
     settingsObj = null;
     settingsMode = "raw";
     if (isJson) {
@@ -53,6 +62,7 @@
   function setHarness(id: HarnessId) {
     if (id === harness) return;
     harness = id;
+    loaded = null;
     loadHarness();
   }
 
@@ -81,6 +91,8 @@
   }
 
   async function saveSettings() {
+    if (!canSaveSettings) return;
+    const target = harness; // pinned before any await
     if (isJson) {
       if (settingsMode === "form") {
         settingsText = JSON.stringify(settingsObj, null, 2) + "\n";
@@ -90,13 +102,14 @@
       }
     }
     try {
-      await api.saveSettingsText(harness, settingsText);
+      await api.saveSettingsText(target, settingsText);
       flash("settings", true, "saved — applies to new sessions");
-      if (harness === "codex") refreshUsage(); // edits may flip the auth mode
+      if (target === "codex") refreshUsage(); // edits may flip the auth mode
     } catch (e) { flash("settings", false, String(e)); }
   }
 
   async function saveMd() {
+    if (!canSaveMd) return;
     try {
       await api.saveMd(harness, md);
       flash("md", true, "saved — applies to new sessions");
@@ -121,7 +134,8 @@
     try {
       const res = await api.setCodexMode(mode);
       codexMode = res.mode;
-      settingsText = res.configText;
+      // only if the codex buffer is still the one on screen
+      if (loaded?.harness === "codex" && harness === "codex") settingsText = res.configText;
       if (app.usage?.codex) app.usage.codex.mode = res.mode;
       flash("settings", true, `auth mode → ${mode === "api" ? "API key" : "ChatGPT OAuth"}`);
     } catch (e) { flash("settings", false, String(e)); }
@@ -223,14 +237,14 @@
     {:else}
       <textarea class="cfg-editor" bind:value={settingsText} spellcheck="false"></textarea>
     {/if}
-    <button class="btn" onclick={saveSettings}>Save settings</button>
+    <button class="btn" onclick={saveSettings} disabled={!canSaveSettings}>Save settings</button>
     {#if status.settings}<span class="cfg-status" class:ok={status.settings.ok} class:bad={!status.settings.ok}>{status.settings.msg}</span>{/if}
   </div>
 
   <div class="glass glow cfg-card cfg-full">
     <h3>{meta.mdLabel}</h3>
     <textarea class="cfg-editor" style="min-height:380px" bind:value={md} spellcheck="false"></textarea>
-    <button class="btn" onclick={saveMd}>Save {meta.mdLabel.split("/").pop()}</button>
+    <button class="btn" onclick={saveMd} disabled={!canSaveMd}>Save {meta.mdLabel.split("/").pop()}</button>
     {#if status.md}<span class="cfg-status" class:ok={status.md.ok} class:bad={!status.md.ok}>{status.md.msg}</span>{/if}
   </div>
 </div>

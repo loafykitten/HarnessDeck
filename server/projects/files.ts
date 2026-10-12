@@ -1,6 +1,6 @@
-import { readdir, readFile, realpath, stat } from "node:fs/promises";
-import { extname, join, sep } from "node:path";
-import { DEV_DIR } from "../terminal/sessions";
+import { readdir, readFile } from "node:fs/promises";
+import { extname, join } from "node:path";
+import { resolveProjectDir } from "./resolve";
 
 export type TreeGitStatus = "tracked" | "untracked" | "ignored" | "none";
 
@@ -34,20 +34,10 @@ const CACHE_TTL = 15_000;
 const treeCache = new Map<string, { at: number; value: ProjectTree }>();
 const stackCache = new Map<string, { at: number; value: { stack: string[] } }>();
 
-async function resolveProject(name: string): Promise<string | null> {
-  if (!name || name.includes("/") || name.includes("..")) return null;
-  try {
-    const [base, dir] = await Promise.all([realpath(DEV_DIR), realpath(join(DEV_DIR, name))]);
-    if (!dir.startsWith(base + sep)) return null;
-    return (await stat(dir)).isDirectory() ? dir : null;
-  } catch {
-    return null;
-  }
-}
-
 async function gitFiles(dir: string, ...args: string[]): Promise<Set<string> | null> {
   try {
-    const p = Bun.spawn(["git", "ls-files", "-z", ...args], {
+    // No repo-configured programs (fsmonitor, hooks): an agent may have written them.
+    const p = Bun.spawn(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "ls-files", "-z", ...args], {
       cwd: dir, stdout: "pipe", stderr: "pipe",
     });
     const [out, , code] = await Promise.all([
@@ -93,7 +83,7 @@ function directoryGit(path: string, inGit: boolean, tracked: Set<string>, untrac
 }
 
 export async function projectTree(name: string, fresh = false): Promise<ProjectTree | null> {
-  const dir = await resolveProject(name);
+  const dir = await resolveProjectDir(name);
   if (!dir) return null;
 
   const hit = treeCache.get(dir);
@@ -189,7 +179,7 @@ const PACKAGE_TECH: [string, string][] = [
 ];
 
 export async function projectStack(name: string): Promise<{ stack: string[] } | null> {
-  const dir = await resolveProject(name);
+  const dir = await resolveProjectDir(name);
   if (!dir) return null;
 
   const hit = stackCache.get(dir);

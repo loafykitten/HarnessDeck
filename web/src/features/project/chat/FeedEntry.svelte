@@ -38,10 +38,10 @@
     <ToolCard name={item.name} input={item.input} result={item.result} isError={item.isError} running={item.running} />
   {/if}
 {:else if item.type === "permission"}
-  <ApprovalCard toolName={item.toolName} input={item.input} resolved={item.resolved}
+  <ApprovalCard toolName={item.toolName} input={item.input} resolved={item.resolved} sending={item.sending}
     respond={(behavior, always, message) => permission(item.requestId, behavior, always, message)} />
 {:else if item.type === "question"}
-  <QuestionCard questions={item.questions} resolved={item.resolved}
+  <QuestionCard questions={item.questions} resolved={item.resolved} sending={item.sending}
     respond={(answers) => question(item.requestId, answers)} />
 {:else}
   <div class="chat-error">{item.message}</div>

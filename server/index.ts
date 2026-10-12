@@ -1,5 +1,5 @@
 import type { WebSocketHandler } from "bun";
-import { err, json, serveStatic, type RouteHandler } from "./http";
+import { err, json, rejectUntrustedRequest, serveStatic, type RouteHandler } from "./http";
 import { hasSession, reconcilePersistedSessions } from "./terminal/sessions";
 import { terminalRoutes } from "./terminal/routes";
 import { terminalWebsocket, type WsData as TerminalWsData } from "./terminal/ws";
@@ -14,9 +14,17 @@ import { configRoutes } from "./config/routes";
 import { harnessRoutes } from "./harness/routes";
 import { getGreeting } from "./greeting";
 import { getNews } from "./news/news";
-import { ensureTailscaleServe } from "./tailscale";
+import { ensureTailscaleServe, tailnetHosts } from "./tailscale";
 
 const PORT = Number(process.env.PORT) || 4553;
+
+/** Hostnames served beyond loopback and *.ts.net (comma-separated, e.g. for
+    a reverse proxy of your own); the tailnet's names/IPs join at startup. */
+const allowedHosts = new Set(
+  (process.env.HARNESSDECK_ALLOWED_HOSTS ?? "").split(",")
+    .map(h => h.trim().toLowerCase().replace(/\.$/, ""))
+    .filter(Boolean),
+);
 
 await reconcilePersistedSessions();
 
@@ -60,6 +68,12 @@ const server = Bun.serve<WsData>({
   idleTimeout: 60,
 
   async fetch(req, server) {
+    const rejected = rejectUntrustedRequest(req.headers, allowedHosts);
+    if (rejected) {
+      console.warn(`[403 ${req.method}] ${rejected}`);
+      return err(rejected, 403);
+    }
+
     const url = new URL(req.url);
     const { pathname } = url;
 
@@ -99,6 +113,7 @@ const server = Bun.serve<WsData>({
 console.log(`HarnessDeck → http://localhost:${server.port} (loopback only)`);
 if (PORT === 4553) {
   ensureTailscaleServe(PORT).then(url => {
+    for (const host of tailnetHosts) allowedHosts.add(host);
     if (url) console.log(`              ⤷ tailnet ${url}`);
   });
 }

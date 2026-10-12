@@ -1,16 +1,22 @@
 <script lang="ts">
   import type { ChatQuestion } from "../../../types/chat";
 
-  let { questions, resolved, respond }: {
+  let { questions, resolved, sending = false, respond }: {
     questions: ChatQuestion[];
     resolved?: string;
+    /** Answered here but not yet confirmed by the server. */
+    sending?: boolean;
     respond: (answers: Record<string, string[]>) => void;
   } = $props();
   let selected = $state<Record<string, string[]>>({});
   let other = $state<Record<string, string>>({});
 
+  // Answers stay on screen but frozen while sending, so a dropped socket
+  // hands the same selections back for a resubmit.
+  const locked = $derived(!!resolved || sending);
+
   function pick(question: ChatQuestion, label: string): void {
-    if (resolved) return;
+    if (locked) return;
     const current = selected[question.question] ?? [];
     selected[question.question] = question.multiSelect
       ? current.includes(label) ? current.filter(item => item !== label) : [...current, label]
@@ -18,7 +24,7 @@
   }
 
   function submit(): void {
-    if (resolved) return;
+    if (locked) return;
     const answers: Record<string, string[]> = {};
     for (const question of questions) {
       answers[question.question] = [...(selected[question.question] ?? []), other[question.question]?.trim()]
@@ -36,7 +42,7 @@
     (selected[question.question]?.length ?? 0) > 0 || !!other[question.question]?.trim()));
 </script>
 
-<div class="question-card" class:resolved>
+<div class="question-card" class:resolved={locked}>
   {#each questions as question (question.question)}
     {@const previews = selectedPreviews(question)}
     <fieldset>
@@ -48,7 +54,7 @@
       <div class="question-options">
         {#each question.options as option (option.label)}
           <button class:on={selected[question.question]?.includes(option.label)}
-            disabled={!!resolved} onclick={() => pick(question, option.label)}>
+            disabled={locked} onclick={() => pick(question, option.label)}>
             <span>{option.label}</span>
             <small>{option.description}</small>
           </button>
@@ -62,13 +68,15 @@
       {/each}
       {#if !resolved || other[question.question]}
         <input placeholder="Other…" aria-label={`Other answer for ${question.header}`}
-          value={other[question.question] ?? ""} disabled={!!resolved}
+          value={other[question.question] ?? ""} disabled={locked}
           oninput={(event) => other[question.question] = event.currentTarget.value} />
       {/if}
     </fieldset>
   {/each}
   {#if resolved}
     <div class="request-resolved" class:dismissed={resolved === "dismissed"}>{resolved}</div>
+  {:else if sending}
+    <div class="request-resolved dismissed">sending…</div>
   {:else}
     <button class="question-submit" disabled={!complete} onclick={submit}>Submit answer</button>
   {/if}

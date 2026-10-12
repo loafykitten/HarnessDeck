@@ -63,6 +63,8 @@ export type ChatEvent = Sequenced & (
   | { type: "permission_request"; id: string; toolName: string; input: Record<string, unknown>; suggestions?: unknown[] }
   | { type: "question_request"; id: string; questions: ChatQuestion[] }
   | { type: "request_resolved"; id: string; outcome: RequestOutcome }
+  /** The session's effective options after a set_options, whether or not the change stuck. */
+  | { type: "options"; model: ChatModel; effort: ChatEffort; permissionMode: ChatPermissionMode }
   | { type: "status"; status: ChatStatus }
   | { type: "context"; context: ChatContext }
   | { type: "result"; costUsd: number; usage: unknown; durationMs: number; context?: ChatContext }
@@ -72,6 +74,8 @@ export type ChatEvent = Sequenced & (
 export interface ChatInit {
   type: "init";
   seq: number;
+  /** Server boot id; changes on restart, when seqs restart with the rebuilt backlog. */
+  epoch: string;
   session: ChatSession;
   backlog: ChatEvent[];
 }
@@ -88,6 +92,7 @@ export type ChatFeedItem =
   | { id: string; type: "message"; role: "user" | "assistant"; text: string; images?: string[]; streaming?: boolean; parentToolUseId?: string }
   | { id: string; type: "thinking"; text: string; streaming?: boolean; parentToolUseId?: string }
   | { id: string; type: "tool"; toolId: string; name: string; input?: unknown; result?: unknown; isError?: boolean; running: boolean; parentToolUseId?: string }
-  | { id: string; type: "permission"; requestId: string; toolName: string; input: Record<string, unknown>; resolved?: string }
-  | { id: string; type: "question"; requestId: string; questions: ChatQuestion[]; resolved?: string }
+  // sending: answered locally but not yet confirmed by request_resolved.
+  | { id: string; type: "permission"; requestId: string; toolName: string; input: Record<string, unknown>; resolved?: string; sending?: boolean }
+  | { id: string; type: "question"; requestId: string; questions: ChatQuestion[]; resolved?: string; sending?: boolean }
   | { id: string; type: "error"; message: string };

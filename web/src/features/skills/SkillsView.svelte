@@ -40,6 +40,10 @@
   let openFile = $state("SKILL.md");
   let fileText = $state("");
   let fileDirty = $state(false);
+  // true only once fileText holds openFile's real contents — a placeholder
+  // or an in-flight load must never be saved over the file
+  let fileReady = $state(false);
+  let fileGen = 0; // bumps per pick, so a slow load can't land under a later tab
   let saveStatus = $state<{ ok: boolean; msg: string } | null>(null);
 
   // install / generate
@@ -80,8 +84,11 @@
       detail = await api.skill(name);
       openFile = "SKILL.md";
       fileDirty = false;
-      if (detail.skillMd !== undefined) fileText = detail.skillMd;
-      else await pickFile("SKILL.md");
+      if (detail.skillMd !== undefined) {
+        fileGen++; // supersede any load still in flight from the previous skill
+        fileText = detail.skillMd;
+        fileReady = true;
+      } else await pickFile("SKILL.md");
     } catch {
       navigate({ view: "skills" });
     }
@@ -92,14 +99,26 @@
     if (fileDirty && !confirm("Discard unsaved changes?")) return;
     openFile = path;
     fileDirty = false;
+    fileReady = false;
+    const gen = ++fileGen;
     const f = detail.files.find(x => x.path === path);
-    fileText = f?.editable
-      ? await api.skillFile(detail.name, path).catch(() => "(failed to load)")
-      : `(${f ? "binary or oversized" : "missing"} file — not editable here)`;
+    if (!f?.editable) {
+      fileText = `(${f ? "binary or oversized" : "missing"} file — not editable here)`;
+      return;
+    }
+    fileText = "";
+    try {
+      const text = await api.skillFile(detail.name, path);
+      if (gen !== fileGen) return;
+      fileText = text;
+      fileReady = true;
+    } catch {
+      if (gen === fileGen) fileText = "(failed to load)";
+    }
   }
 
   async function saveFile() {
-    if (!detail) return;
+    if (!detail || !fileReady) return;
     try {
       await api.saveSkillFile(detail.name, openFile, fileText);
       fileDirty = false;
@@ -219,10 +238,10 @@
       <div class="skill-editor-wrap">
         <textarea class="cfg-editor skill-editor" bind:value={fileText} spellcheck="false"
           oninput={() => fileDirty = true}
-          disabled={!detail.files.find(f => f.path === openFile)?.editable}></textarea>
+          disabled={!fileReady}></textarea>
       </div>
       <div class="input-hint">
-        <button class="btn" style="margin-top:0" onclick={saveFile} disabled={!fileDirty}>Save {openFile}</button>
+        <button class="btn" style="margin-top:0" onclick={saveFile} disabled={!fileDirty || !fileReady}>Save {openFile}</button>
         {#if saveStatus}<span class="cfg-status" class:ok={saveStatus.ok} class:bad={!saveStatus.ok}>{saveStatus.msg}</span>{/if}
       </div>
     </div>

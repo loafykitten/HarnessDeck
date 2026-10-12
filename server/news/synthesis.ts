@@ -87,10 +87,18 @@ async function neuralwatt(cands: Candidate[], current: NewsItem[]): Promise<Synt
   const text = data.choices?.[0]?.message?.content ?? "";
   const arr = JSON.parse(text.slice(text.indexOf("["), text.lastIndexOf("]") + 1));
   if (!Array.isArray(arr)) throw new Error("neuralwatt: not an array");
-  // a well-formed-but-wrong element ([null], {"n":"0"}, …) must degrade to the
-  // per-candidate fallback, not throw past it
-  return arr.filter((v): v is SynthVerdict =>
-    !!v && typeof v === "object" && typeof (v as SynthVerdict).n === "number");
+  // a well-formed-but-wrong element ([null], {"n":"0"}, {"headline":123}, …)
+  // must degrade to the per-candidate fallback, not throw past it — so every
+  // field synthesize() consumes is type-checked here, and a bad one is dropped
+  return arr.flatMap((v): SynthVerdict[] => {
+    if (!v || typeof v !== "object" || typeof v.n !== "number") return [];
+    return [{
+      n: v.n,
+      ...(typeof v.headline === "string" ? { headline: v.headline } : {}),
+      ...(typeof v.kind === "string" ? { kind: v.kind } : {}),
+      ...(v.drop === true ? { drop: true } : {}),
+    }];
+  });
 }
 
 export async function synthesize(cands: Candidate[], current: NewsItem[]): Promise<NewsItem[]> {
@@ -108,7 +116,9 @@ export async function synthesize(cands: Candidate[], current: NewsItem[]): Promi
     if (v?.drop && dropsTrusted) return [];
     // no key / bad response → raw title, truncated: worse copy beats no news
     const headline = truncate(v?.headline?.trim() || c.title);
-    const kind: NewsKind = v?.kind === "release" || (!v && c.kind === "release") ? "release" : "news";
+    // an unusable kind falls back to the poller's guess, same as no verdict
+    const vKind = v?.kind === "release" || v?.kind === "news" ? v.kind : undefined;
+    const kind: NewsKind = (vKind ?? c.kind) === "release" ? "release" : "news";
     return [{ id: c.id, vendor: c.vendor, kind, headline, url: c.url, at: c.at }];
   });
 }

@@ -26,7 +26,9 @@ export const terminalRoutes: RouteHandler = async (req, url) => {
   }
   if (pathname === "/api/sessions" && req.method === "POST") {
     const body = await req.json();
-    if (!body.project || !body.name) return err("project and name required");
+    if (typeof body.project !== "string" || typeof body.name !== "string" || !body.project || !body.name) {
+      return err("project and name required");
+    }
     const harness = body.harness ?? DEFAULT_HARNESS;
     if (!isHarnessId(harness)) return err(`unknown harness: ${harness}`);
     const res = await createSession(body.project, body.name, harness);

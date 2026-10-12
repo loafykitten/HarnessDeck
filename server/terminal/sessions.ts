@@ -1,6 +1,6 @@
-import { homedir } from "node:os";
-import { stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { DEV_DIR, resolveProjectDir } from "../projects/resolve";
 import { DEFAULT_HARNESS, HARNESSES, isHarnessId, type HarnessId } from "../harness/registry";
 import {
   addSessionRegistryEntry,
@@ -12,7 +12,7 @@ import {
 
 const PREFIX = "cc-";
 const SEP = "--";
-export const DEV_DIR = join(homedir(), "Developer");
+export { DEV_DIR };
 
 export type SessionStatus = "working" | "waiting" | "idle";
 
@@ -68,13 +68,34 @@ function sanitize(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
 }
 
+/** sanitize() is lossy, so `foo.bar` and `foo-bar` would share an id; a
+    changed part gets a short hash of the original appended. Hex never adds
+    "--", so SEP splits stay unambiguous. */
+function idPart(s: string): string {
+  const clean = sanitize(s);
+  if (clean === s) return s;
+  const tag = createHash("sha256").update(s).digest("hex").slice(0, 6);
+  return clean ? `${clean}-${tag}` : tag;
+}
+
 /** Sanitized names can never contain "--" (runs of '-' collapse), so SEP
     splits are unambiguous. Claude ids stay two-segment (`cc-proj--name`) for
     compatibility with sessions created before harnesses existed; any other
-    harness appends its id as a third segment (`cc-proj--name--codex`). */
-export function sessionId(project: string, name: string, harness: HarnessId): string {
-  const base = `${PREFIX}${sanitize(project)}${SEP}${sanitize(name)}`;
+    harness appends its id as a third segment (`cc-proj--name--codex`). The id
+    only has to be unique — project/name come back from the registry. */
+export function sessionId(project: string, name: string, harness: HarnessId, part = idPart): string {
+  const base = `${PREFIX}${part(project)}${SEP}${part(name)}`;
   return harness === DEFAULT_HARNESS ? base : `${base}${SEP}${harness}`;
+}
+
+/** Best-effort inverse of sessionId, for live sessions with no registry entry
+    (created before the registry existed, or by hand). */
+function parseSessionId(id: string): Pick<Session, "project" | "name" | "harness"> {
+  const parts = id.slice(PREFIX.length).split(SEP);
+  const last = parts[parts.length - 1];
+  const harness = parts.length >= 3 && isHarnessId(last) ? last : DEFAULT_HARNESS;
+  const nameParts = harness === DEFAULT_HARNESS ? parts.slice(1) : parts.slice(1, -1);
+  return { project: parts[0], name: nameParts.join(SEP) || "main", harness };
 }
 
 /** Classify a session from its visible pane. Each harness paints a transient
@@ -116,19 +137,19 @@ async function computeBaseSessions(): Promise<Session[]> {
     "#{session_name}|#{session_created}|#{session_activity}|#{session_attached}",
   );
   if (!ok) return []; // tmux server not running = no sessions; never prune here
+  const registry = new Map((await readSessionRegistry()).map(entry => [entry.id, entry]));
   const sessions: Session[] = [];
   for (const line of out.trim().split("\n")) {
     if (!line) continue;
     const [id, created, activity, attached] = line.split("|");
     if (!id?.startsWith(PREFIX)) continue;
-    const parts = id.slice(PREFIX.length).split(SEP);
-    const last = parts[parts.length - 1];
-    const harness = parts.length >= 3 && isHarnessId(last) ? last : DEFAULT_HARNESS;
-    const nameParts = harness === DEFAULT_HARNESS ? parts.slice(1) : parts.slice(1, -1);
+    // ids are lossy (foo.bar -> foo-bar); the registry has the real names
+    const entry = registry.get(id);
+    const { project, name, harness } = entry ?? parseSessionId(id);
     sessions.push({
       id,
-      project: parts[0],
-      name: nameParts.join(SEP) || "main",
+      project,
+      name,
       harness,
       created: Number(created) * 1000,
       activity: Number(activity) * 1000,
@@ -181,19 +202,16 @@ export async function listSessions(): Promise<Session[]> {
 }
 
 export async function createSession(project: string, name: string, harness: HarnessId = DEFAULT_HARNESS): Promise<{ id: string } | { error: string }> {
+  if (!(await resolveProjectDir(project))) return { error: `no such project: ${project}` };
   const dir = join(DEV_DIR, project);
-  try {
-    const st = await stat(dir);
-    if (!st.isDirectory()) return { error: `not a directory: ${dir}` };
-  } catch {
-    return { error: `no such project: ${project}` };
-  }
   const id = sessionId(project, name, harness);
   const existing = await tmux("has-session", "-t", `=${id}`);
   if (existing.ok) return { error: `session already exists: ${id}` };
   const started = await startTmuxSession(id, dir, HARNESSES[harness].bin);
   if (!started.ok) return { error: started.error };
   await addSessionRegistryEntry({ id, project, name, harness, created: Date.now() });
+  // a listing between tmux start and the registry write parsed the lossy id
+  invalidateSessionCaches();
   return { id };
 }
 
@@ -221,12 +239,10 @@ function recentlyRecreatedIds(): Set<string> {
   return ids;
 }
 
-async function isProjectDirectory(dir: string): Promise<boolean> {
-  try { return (await stat(dir)).isDirectory(); } catch { return false; }
-}
-
+/** Ids minted before idPart() hashed lossy parts are still honoured. */
 function isValidRegistryEntry(entry: PersistedSession): boolean {
-  return entry.id === sessionId(entry.project, entry.name, entry.harness);
+  return entry.id === sessionId(entry.project, entry.name, entry.harness)
+    || entry.id === sessionId(entry.project, entry.name, entry.harness, sanitize);
 }
 
 export async function reconcilePersistedSessions(): Promise<void> {
@@ -240,8 +256,7 @@ export async function reconcilePersistedSessions(): Promise<void> {
     const dropIds = new Set<string>();
     const restorable: PersistedSession[] = [];
     for (const entry of entries) {
-      const dir = join(DEV_DIR, entry.project);
-      if (!isValidRegistryEntry(entry) || !(await isProjectDirectory(dir))) {
+      if (!isValidRegistryEntry(entry) || !(await resolveProjectDir(entry.project))) {
         dropIds.add(entry.id);
         dropped += 1;
       } else {
@@ -279,7 +294,10 @@ export async function reconcilePersistedSessions(): Promise<void> {
   console.log(`Sessions: restored ${restored}, already running ${running}, dropped ${dropped}, failed ${failed}`);
 }
 
+/** Only the app's own sessions: this gates WS attach, which must never hand
+    a browser some other tmux session on the machine. */
 export async function hasSession(id: string): Promise<boolean> {
+  if (!id.startsWith(PREFIX)) return false;
   return (await tmux("has-session", "-t", `=${id}`)).ok;
 }
 

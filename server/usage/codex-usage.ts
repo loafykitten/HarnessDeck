@@ -1,6 +1,6 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { MonthUsage } from "./claude";
+import { ccusageJson, type MonthUsage } from "./claude";
 import { CODEX_HOME } from "./codex-auth";
 
 const SESSIONS_DIR = join(CODEX_HOME, "sessions");
@@ -239,13 +239,8 @@ export async function getCodexSpend(): Promise<CodexSpend> {
 async function computeSpend(): Promise<CodexSpend> {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const p = Bun.spawn(
-    ["bunx", "ccusage", "codex", "session", "--since", localYmd(start).replaceAll("-", ""), "--json"],
-    { stdout: "pipe", stderr: "ignore" },
-  );
-  const out = await new Response(p.stdout).text();
-  await p.exited;
-  const sessions: any[] = (JSON.parse(out).sessions ?? [])
+  const res = await ccusageJson(["codex", "session", "--since", localYmd(start).replaceAll("-", ""), "--json"]);
+  const sessions: any[] = (res.sessions ?? [])
     .filter((s: any) => new Date(s.lastActivity ?? 0).getTime() >= start.getTime());
   const acc: CodexSpend = { api: { tokens: 0, costUSD: 0 }, oauth: { tokens: 0, costUSD: 0 } };
   if (sessions.length > 0) {
@@ -287,13 +282,8 @@ async function computeMonth(): Promise<MonthUsage> {
   // same window as the Claude card: calendar month (renewalDay is a Claude
   // subscription concept; codex bills separately, so calendar month it is)
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const p = Bun.spawn(
-    ["bunx", "ccusage", "codex", "daily", "--since", localYmd(start).replaceAll("-", ""), "--json"],
-    { stdout: "pipe", stderr: "ignore" },
-  );
-  const out = await new Response(p.stdout).text();
-  await p.exited;
-  const entries: any[] = (JSON.parse(out).daily ?? [])
+  const res = await ccusageJson(["codex", "daily", "--since", localYmd(start).replaceAll("-", ""), "--json"]);
+  const entries: any[] = (res.daily ?? [])
     .filter((e: any) => String(e.date) >= localYmd(start));
 
   const byModel = new Map<string, { tokens: number; costUSD: number }>();

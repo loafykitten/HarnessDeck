@@ -90,6 +90,26 @@
     feed.length;
     if (pinned) tick().then(() => host?.scrollTo({ top: host.scrollHeight, behavior: "smooth" }));
   });
+
+  // Streaming grows an item in place, which feed.length never sees, so follow
+  // DOM growth too. New top-level items keep the smooth glide above; in-place
+  // growth jumps, since a smooth scroll lagging a fast stream would cross the
+  // unpin threshold and stop following.
+  $effect(() => {
+    let frame = 0;
+    const observer = new MutationObserver(records => {
+      if (!pinned || frame || records.some(record => record.target === host && record.type === "childList")) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (pinned) host.scrollTop = host.scrollHeight;
+      });
+    });
+    observer.observe(host, { childList: true, subtree: true, characterData: true });
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  });
 </script>
 
 <div class="chat-body">

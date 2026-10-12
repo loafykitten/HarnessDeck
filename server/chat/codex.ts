@@ -196,6 +196,9 @@ class CodexChatHandle implements ChatHandle {
   private defaultModel: string | null = null;
   private effectiveModel: string | null = null;
   private pumping = false;
+  /** Bumped by every interrupt, so a turn whose turn/start was still in flight
+      when the user hit stop can be cancelled once its id is known. */
+  private interruptGeneration = 0;
   private ready: Promise<void>;
 
   constructor(private options: ChatStartOptions) {
@@ -209,7 +212,9 @@ class CodexChatHandle implements ChatHandle {
     void this.consumeStdout();
     void this.consumeStderr();
     void this.watchExit();
-    this.ready = this.initialize();
+    // An init failure is terminal: left in place, the rejected promise would
+    // make every queued message re-pump against it forever.
+    this.ready = this.initialize().catch(error => this.failInit(error));
   }
 
   onEvent(callback: (event: DriverEvent) => void): () => void {
@@ -236,6 +241,9 @@ class CodexChatHandle implements ChatHandle {
       this.emit({ type: "error", message: error instanceof Error ? error.message : String(error) });
       return;
     }
+    // The process may have died while the images were read; queueing now
+    // would leave the message (and a "working" status) stranded.
+    if (this.stopped) throw new Error("Codex session ended — send the message again.");
     // Carry the paste basenames so the feed can render the images inline.
     const images = imagePaths.map(path => basename(path));
     this.emit({ type: "block", role: "user", content: text, images: images.length ? images : undefined });
@@ -272,14 +280,20 @@ class CodexChatHandle implements ChatHandle {
   }
 
   async interrupt(): Promise<void> {
+    this.interruptGeneration++;
     this.queue.length = 0;
     this.dismissPendingApprovals();
     const threadId = this.threadId;
     const turnId = this.activeTurnId;
     if (!threadId || !turnId) {
+      // A turn/start still in flight is cancelled by pump once it returns.
       if (!this.stopped) this.emit({ type: "status", status: "idle" });
       return;
     }
+    await this.interruptTurn(threadId, turnId);
+  }
+
+  private async interruptTurn(threadId: string, turnId: string): Promise<void> {
     await this.request<TurnInterruptResponse>("turn/interrupt", { threadId, turnId });
     if (this.interruptFallback) clearTimeout(this.interruptFallback);
     this.interruptFallback = setTimeout(() => {
@@ -292,6 +306,14 @@ class CodexChatHandle implements ChatHandle {
 
   async stop(): Promise<void> {
     if (this.stopped) return;
+    this.teardown(new Error("Codex session stopped"));
+    await this.proc.exited;
+    this.emit({ type: "status", status: "idle" });
+  }
+
+  /** Mark the handle dead and kill the app-server; the registry starts a
+      fresh handle on the next send. */
+  private teardown(reason: Error): void {
     this.queue.length = 0;
     this.dismissPendingApprovals();
     this.stopped = true;
@@ -300,11 +322,18 @@ class CodexChatHandle implements ChatHandle {
       clearTimeout(this.interruptFallback);
       this.interruptFallback = null;
     }
-    for (const request of this.pendingRpc.values()) request.reject(new Error("Codex session stopped"));
+    for (const request of this.pendingRpc.values()) request.reject(reason);
     this.pendingRpc.clear();
     this.proc.stdin.end();
     this.proc.kill();
-    await this.proc.exited;
+  }
+
+  private failInit(error: unknown): void {
+    // A process exit already reported itself through watchExit.
+    if (this.stopped) return;
+    const message = `Codex failed to start: ${error instanceof Error ? error.message : String(error)}`;
+    this.teardown(new Error(message));
+    this.emit({ type: "error", message });
     this.emit({ type: "status", status: "idle" });
   }
 
@@ -397,8 +426,13 @@ class CodexChatHandle implements ChatHandle {
       this.turnStartedAt = Date.now();
       this.latestUsage = null;
       this.lastErrorMessage = null;
+      const generation = this.interruptGeneration;
       const response = await this.request<TurnStartResponse>("turn/start", params);
       if (!this.completedTurns.has(response.turn.id)) this.activeTurnId = response.turn.id;
+      // Stop was pressed before the turn had an id to interrupt.
+      if (generation !== this.interruptGeneration && this.activeTurnId === response.turn.id) {
+        await this.interruptTurn(threadId, response.turn.id);
+      }
     } catch (error) {
       if (!this.stopped) {
         this.emit({ type: "error", message: error instanceof Error ? error.message : String(error) });

@@ -67,3 +67,5 @@ For run-at-login, install a launchd LaunchAgent pointing at `bun server/index.ts
 ## A note on security
 
 This app can start terminal sessions that run real commands, so it binds to **127.0.0.1 only** and has no authentication — it is meant for a single-user machine and must never be exposed to a network. (Optional Tailscale Serve support exists for reaching it from your own devices over your tailnet.)
+
+Since anything on the machine can reach that port, every request is also checked: the `Host` must be loopback, a `*.ts.net` name, or this machine's tailnet name/IP, and any `Origin` a browser sends must match it. That stops other websites you visit from driving your terminals (including via DNS rebinding). If you put your own reverse proxy in front, list its hostnames in `HARNESSDECK_ALLOWED_HOSTS` (comma-separated).

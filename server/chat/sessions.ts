@@ -6,7 +6,13 @@ import { claudeChatDriver } from "./claude";
 import { codexChatDriver } from "./codex";
 import { rehydrateHistory, usageTokens } from "./history";
 import { validateChatImagePaths } from "./images";
-import { createChatWorktree, removeChatWorktree } from "./worktree";
+import {
+  chatWorktreeGit,
+  createChatWorktree,
+  removeChatWorktree,
+  worktreeWritableRoots,
+  type ChatWorktreeGit,
+} from "./worktree";
 import type {
   ChatEffort,
   ChatHandle,
@@ -25,8 +31,18 @@ const STORE_DIR = join(homedir(), ".config", "harnessdeck");
 const PORT = Number(process.env.PORT) || 4553;
 const STORE_PATH = join(STORE_DIR, PORT === 4553 ? "chat-sessions.json" : `chat-sessions-${PORT}.json`);
 const MAX_EVENTS = 500;
+/** Changes on every server start. Rehydrated feeds restart their seqs, so a
+    client must not merge a new epoch's backlog into a feed it built earlier. */
+const EPOCH = randomUUID();
 
-export type ChatEvent = DriverEvent & { seq: number };
+/** What the registry itself broadcasts, alongside driver events: the
+    session's effective options after a set_options, so a client that applied
+    a change optimistically snaps back when the harness rejected it. */
+type SessionEvent =
+  | DriverEvent
+  | { type: "options"; model: ChatModel; effort: ChatEffort; permissionMode: ChatPermissionMode };
+
+export type ChatEvent = SessionEvent & { seq: number };
 
 const DRIVERS = {
   claude: claudeChatDriver,
@@ -56,8 +72,13 @@ export interface ChatSession {
   lastActivity: number;
 }
 
-type StoredSession = ChatSession & { seq?: number };
-type InternalSession = ChatSession & {
+type SessionGit = {
+  /** Resolved at creation; null for a chat without a worktree, or when the
+      dirs couldn't be resolved (the sandbox then gets no git access). */
+  worktreeGit: ChatWorktreeGit | null;
+};
+type StoredSession = ChatSession & Partial<SessionGit> & { seq?: number };
+type InternalSession = ChatSession & SessionGit & {
   handle: ChatHandle | null;
   events: ChatEvent[];
   seq: number;
@@ -109,6 +130,7 @@ async function loadSessions(): Promise<void> {
           totalTokens: item.totalTokens ?? 0,
           canBypassPermissions: item.canBypassPermissions ?? item.permissionMode === "bypassPermissions",
           worktree: typeof item.worktree === "string" ? item.worktree : null,
+          worktreeGit: item.worktreeGit?.commonDir && item.worktreeGit.gitDir ? item.worktreeGit : null,
           handle: null,
           events: [],
           seq: Number.isSafeInteger(item.seq) && (item.seq ?? 0) >= 0 ? item.seq! : 0,
@@ -118,16 +140,25 @@ async function loadSessions(): Promise<void> {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error("load chat sessions", error);
     }
-    await Promise.all([...sessions.values()].map(session => rehydrate(session)));
+    await Promise.all([...sessions.values()].map(async session => {
+      // Sessions persisted before the git dirs were recorded resolve them once.
+      if (session.worktree && !session.worktreeGit) {
+        session.worktreeGit = await chatWorktreeGit(
+          join(DEV_DIR, session.project),
+          sessionDir(session),
+        );
+      }
+      await rehydrate(session);
+    }));
     loaded = true;
   })();
   return loadPromise;
 }
 
 /** Rebuild the in-memory event feed from the harness's own transcript after a
-    restart. Rehydrated events take seqs 1..K while seq keeps the persisted
-    high-water mark, so fresh clients replay full history and clients that
-    survived the restart (lastSeq ≥ K) keep their richer local feed untouched. */
+    restart. Rehydrated events take seqs 1..K; seq keeps the persisted
+    high-water mark so it never runs backwards, and the new EPOCH tells
+    clients that survived the restart to replace their feed with this one. */
 async function rehydrate(session: InternalSession): Promise<void> {
   if (!session.sdkSessionId || session.events.length) return;
   try {
@@ -159,6 +190,7 @@ function persist(): Promise<void> {
     const tmp = `${STORE_PATH}.tmp-${process.pid}`;
     const data: StoredSession[] = [...sessions.values()].map(session => ({
       ...view(session),
+      worktreeGit: session.worktreeGit,
       seq: session.seq,
     }));
     await writeFile(tmp, JSON.stringify(data, null, 2) + "\n");
@@ -167,7 +199,7 @@ function persist(): Promise<void> {
   return persistChain;
 }
 
-function emit(session: InternalSession, event: DriverEvent): void {
+function emit(session: InternalSession, event: SessionEvent): void {
   const next = { ...event, seq: ++session.seq } as ChatEvent;
   session.lastActivity = Date.now();
   if (event.type === "status") session.status = event.status;
@@ -184,9 +216,9 @@ function emit(session: InternalSession, event: DriverEvent): void {
       if (event.context.window !== null) session.contextWindow = event.context.window;
     }
   }
-  // Context updates are frequent and fully captured by the session view;
+  // Context and options updates are fully captured by the session view;
   // keeping them out of the buffer stops them displacing replayable content.
-  if (event.type !== "context") {
+  if (event.type !== "context" && event.type !== "options") {
     session.events.push(next);
     if (session.events.length > MAX_EVENTS) session.events.splice(0, session.events.length - MAX_EVENTS);
   }
@@ -198,9 +230,9 @@ function ensureHandle(session: InternalSession): ChatHandle {
   if (session.handle && !session.handle.dead) return session.handle;
   const handle = DRIVERS[session.harness].start({
     cwd: sessionDir(session),
-    // A linked worktree's git metadata lives in the project's shared .git dir;
-    // without write access there every git command in the sandbox fails.
-    extraWritableRoots: session.worktree ? [join(DEV_DIR, session.project, ".git")] : undefined,
+    // A linked worktree's git metadata lives in the shared repository; without
+    // write access to (the safe parts of) it every git command in the sandbox fails.
+    extraWritableRoots: session.worktreeGit ? worktreeWritableRoots(session.worktreeGit) : undefined,
     model: session.model,
     effort: session.effort,
     permissionMode: session.permissionMode,
@@ -247,11 +279,14 @@ export async function createChatSession(input: {
   const info = await stat(resolvedProjectDir).catch(() => null);
   if (!info?.isDirectory()) throw new Error(`no such project: ${input.project}`);
   const worktree = input.worktree ? await createChatWorktree(resolvedProjectDir, input.name) : null;
+  const worktreeGit = worktree ? await chatWorktreeGit(resolvedProjectDir, join(resolvedProjectDir, worktree)) : null;
+  if (worktree && !worktreeGit) console.error(`chat worktree: could not resolve git dirs for ${input.project}/${worktree}`);
   const now = Date.now();
   const session: InternalSession = {
     id: `chat-${randomUUID()}`,
     ...input,
     worktree,
+    worktreeGit,
     canBypassPermissions: input.permissionMode === "bypassPermissions",
     sdkSessionId: null,
     status: "idle",
@@ -274,10 +309,15 @@ export async function hasChatSession(id: string): Promise<boolean> {
   return sessions.has(id);
 }
 
-export function chatInit(id: string): { session: ChatSession; backlog: ChatEvent[]; seq: number } | null {
+export function chatInit(id: string): {
+  session: ChatSession;
+  backlog: ChatEvent[];
+  seq: number;
+  epoch: string;
+} | null {
   const session = sessions.get(id);
   if (!session) return null;
-  return { session: view(session), backlog: [...session.events], seq: session.seq };
+  return { session: view(session), backlog: [...session.events], seq: session.seq, epoch: EPOCH };
 }
 
 export function subscribeChat(id: string, listener: (event: ChatEvent) => void): (() => void) | null {
@@ -321,6 +361,9 @@ export async function sendChatMessage(id: string, text: string, imagePaths: stri
   }
   try {
     const validatedPaths = await validateChatImagePaths(imagePaths);
+    // A delete may have landed during validation; starting a handle now would
+    // orphan an agent process (and race the worktree cleanup).
+    if (sessions.get(id) !== session) return false;
     await ensureHandle(session).send(text.trim(), validatedPaths);
     return true;
   } catch (error) {
@@ -346,20 +389,31 @@ export function respondChatQuestion(id: string, requestId: string, response: Que
 export async function setChatOptions(id: string, options: Partial<ChatOptions>): Promise<boolean> {
   const session = sessions.get(id);
   if (!session) return false;
-  if (options.permissionMode === "bypassPermissions" && !session.canBypassPermissions) return false;
-  if (session.handle) {
-    try {
-      await session.handle.setOptions(options);
-    } catch (error) {
-      emit(session, { type: "error", message: error instanceof Error ? error.message : String(error) });
-      return false;
+  try {
+    if (options.permissionMode === "bypassPermissions" && !session.canBypassPermissions) return false;
+    if (session.handle) {
+      try {
+        await session.handle.setOptions(options);
+      } catch (error) {
+        emit(session, { type: "error", message: error instanceof Error ? error.message : String(error) });
+        return false;
+      }
     }
+    if (options.model !== undefined) session.model = options.model;
+    if (options.effort !== undefined) session.effort = options.effort;
+    if (options.permissionMode !== undefined) session.permissionMode = options.permissionMode;
+    await persist();
+    return true;
+  } finally {
+    // Every outcome echoes what actually stuck: clients apply the change
+    // optimistically and would otherwise keep showing a rejected option.
+    emit(session, {
+      type: "options",
+      model: session.model,
+      effort: session.effort,
+      permissionMode: session.permissionMode,
+    });
   }
-  if (options.model !== undefined) session.model = options.model;
-  if (options.effort !== undefined) session.effort = options.effort;
-  if (options.permissionMode !== undefined) session.permissionMode = options.permissionMode;
-  await persist();
-  return true;
 }
 
 export async function interruptChat(id: string): Promise<boolean> {
@@ -389,7 +443,7 @@ export async function deleteChatSession(id: string): Promise<boolean> {
     console.error("chat session stop", id, error);
   }
   if (session.worktree) {
-    const outcome = await removeChatWorktree(join(DEV_DIR, session.project), session.worktree)
+    const outcome = await removeChatWorktree(join(DEV_DIR, session.project), session.worktree, session.worktreeGit)
       .catch(() => "kept" as const);
     if (outcome === "kept") {
       console.log(`chat worktree kept (uncommitted or unmerged work): ${session.project}/${session.worktree}`);

@@ -2,10 +2,12 @@
   import PermissionDetail from "./PermissionDetail.svelte";
   import { toolLook } from "../../../lib/tools";
 
-  let { toolName, input, resolved, respond }: {
+  let { toolName, input, resolved, sending = false, respond }: {
     toolName: string;
     input: Record<string, unknown>;
     resolved?: string;
+    /** Answered here but not yet confirmed by the server. */
+    sending?: boolean;
     respond: (behavior: "allow" | "deny", always?: boolean, message?: string) => void;
   } = $props();
   let denying = $state(false);
@@ -25,6 +27,8 @@
   {#if resolved}
     <div class="request-resolved" class:denied={resolved === "denied"}
       class:dismissed={resolved === "dismissed"}>{resolved}</div>
+  {:else if sending}
+    <div class="request-resolved dismissed">sending…</div>
   {:else if denying}
     <input aria-label="Reason for denial" placeholder="Optional message…" bind:value={message} />
     <div class="request-actions">
