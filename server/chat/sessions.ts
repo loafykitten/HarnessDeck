@@ -6,6 +6,7 @@ import { claudeChatDriver } from "./claude";
 import { codexChatDriver } from "./codex";
 import { rehydrateHistory, usageTokens } from "./history";
 import { validateChatImagePaths } from "./images";
+import { createChatWorktree, removeChatWorktree } from "./worktree";
 import type {
   ChatEffort,
   ChatHandle,
@@ -41,6 +42,9 @@ export interface ChatSession {
   effort: ChatEffort;
   permissionMode: ChatPermissionMode;
   canBypassPermissions: boolean;
+  /** Project-relative worktree path (".worktrees/worktree-…") when the chat is
+      isolated; null runs in the project root. */
+  worktree: string | null;
   sdkSessionId: string | null;
   status: ChatStatus;
   costUsd: number;
@@ -74,6 +78,7 @@ const view = (session: InternalSession): ChatSession => ({
   effort: session.effort,
   permissionMode: session.permissionMode,
   canBypassPermissions: session.canBypassPermissions,
+  worktree: session.worktree,
   sdkSessionId: session.sdkSessionId,
   status: session.status,
   costUsd: session.costUsd,
@@ -83,6 +88,11 @@ const view = (session: InternalSession): ChatSession => ({
   created: session.created,
   lastActivity: session.lastActivity,
 });
+
+/** Where the agent actually runs: the chat's worktree when isolated, else the
+    project root. */
+const sessionDir = (session: ChatSession): string =>
+  session.worktree ? join(DEV_DIR, session.project, session.worktree) : join(DEV_DIR, session.project);
 
 async function loadSessions(): Promise<void> {
   if (loaded) return;
@@ -98,6 +108,7 @@ async function loadSessions(): Promise<void> {
           costUsd: item.costUsd ?? 0,
           totalTokens: item.totalTokens ?? 0,
           canBypassPermissions: item.canBypassPermissions ?? item.permissionMode === "bypassPermissions",
+          worktree: typeof item.worktree === "string" ? item.worktree : null,
           handle: null,
           events: [],
           seq: Number.isSafeInteger(item.seq) && (item.seq ?? 0) >= 0 ? item.seq! : 0,
@@ -122,7 +133,7 @@ async function rehydrate(session: InternalSession): Promise<void> {
   try {
     const history = await rehydrateHistory(
       session.harness,
-      join(DEV_DIR, session.project),
+      sessionDir(session),
       session.sdkSessionId,
     );
     if (!history?.events.length) return;
@@ -186,7 +197,10 @@ function emit(session: InternalSession, event: DriverEvent): void {
 function ensureHandle(session: InternalSession): ChatHandle {
   if (session.handle && !session.handle.dead) return session.handle;
   const handle = DRIVERS[session.harness].start({
-    cwd: join(DEV_DIR, session.project),
+    cwd: sessionDir(session),
+    // A linked worktree's git metadata lives in the project's shared .git dir;
+    // without write access there every git command in the sandbox fails.
+    extraWritableRoots: session.worktree ? [join(DEV_DIR, session.project, ".git")] : undefined,
     model: session.model,
     effort: session.effort,
     permissionMode: session.permissionMode,
@@ -218,6 +232,7 @@ export async function createChatSession(input: {
   model: ChatModel;
   effort: ChatEffort;
   permissionMode: ChatPermissionMode;
+  worktree: boolean;
 }): Promise<ChatSession> {
   await loadSessions();
   if (!input.project || input.project === "." || input.project === ".." || input.project !== basename(input.project)) {
@@ -231,10 +246,12 @@ export async function createChatSession(input: {
   }
   const info = await stat(resolvedProjectDir).catch(() => null);
   if (!info?.isDirectory()) throw new Error(`no such project: ${input.project}`);
+  const worktree = input.worktree ? await createChatWorktree(resolvedProjectDir, input.name) : null;
   const now = Date.now();
   const session: InternalSession = {
     id: `chat-${randomUUID()}`,
     ...input,
+    worktree,
     canBypassPermissions: input.permissionMode === "bypassPermissions",
     sdkSessionId: null,
     status: "idle",
@@ -361,8 +378,22 @@ export async function deleteChatSession(id: string): Promise<boolean> {
   await loadSessions();
   const session = sessions.get(id);
   if (!session) return false;
-  if (session.handle) await session.handle.stop();
+  // Drop the session from the map before the awaits: while stop() is in
+  // flight, a message on an open socket could revive the driver and a second
+  // DELETE could start a duplicate worktree cleanup.
   sessions.delete(id);
   await persist();
+  try {
+    if (session.handle) await session.handle.stop();
+  } catch (error) {
+    console.error("chat session stop", id, error);
+  }
+  if (session.worktree) {
+    const outcome = await removeChatWorktree(join(DEV_DIR, session.project), session.worktree)
+      .catch(() => "kept" as const);
+    if (outcome === "kept") {
+      console.log(`chat worktree kept (uncommitted or unmerged work): ${session.project}/${session.worktree}`);
+    }
+  }
   return true;
 }

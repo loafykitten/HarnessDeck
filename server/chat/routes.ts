@@ -43,6 +43,7 @@ export const chatRoutes: RouteHandler = async (req, url) => {
         model,
         effort,
         permissionMode,
+        worktree: body.worktree === true,
       });
       return json(session, 201);
     } catch (error) {

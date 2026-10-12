@@ -65,13 +65,13 @@ const permissionOptions = (mode: ChatPermissionMode): {
   return { approvalPolicy: "untrusted", sandboxMode: "workspace-write" };
 };
 
-const sandboxPolicy = (mode: ChatPermissionMode, cwd: string): SandboxPolicy => {
+const sandboxPolicy = (mode: ChatPermissionMode, cwd: string, extraWritableRoots: string[] = []): SandboxPolicy => {
   const { sandboxMode } = permissionOptions(mode);
   if (sandboxMode === "danger-full-access") return { type: "dangerFullAccess" };
   if (sandboxMode === "read-only") return { type: "readOnly", networkAccess: false };
   return {
     type: "workspaceWrite",
-    writableRoots: [cwd],
+    writableRoots: [cwd, ...extraWritableRoots],
     networkAccess: false,
     excludeTmpdirEnvVar: false,
     excludeSlashTmp: false,
@@ -389,7 +389,7 @@ class CodexChatHandle implements ChatHandle {
         cwd: this.options.cwd,
         approvalPolicy: mapped.approvalPolicy,
         approvalsReviewer: "user",
-        sandboxPolicy: sandboxPolicy(this.options.permissionMode, this.options.cwd),
+        sandboxPolicy: sandboxPolicy(this.options.permissionMode, this.options.cwd, this.options.extraWritableRoots),
         model,
         effort: this.effortFor(model),
         summary: "auto",

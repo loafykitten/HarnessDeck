@@ -23,6 +23,9 @@ export interface ProjectTree {
 const SKIP_DIRS = new Set([
   ".git", "node_modules", ".build", "dist", "build", "target",
   "DerivedData", "__pycache__", ".venv", "venv",
+  // Chat-session worktrees are full checkouts; scanning them would duplicate
+  // the whole repo in the tree and blow the entry cap.
+  ".worktrees",
 ]);
 const MAX_DEPTH = 8;
 const MAX_ENTRIES = 5_000;

@@ -20,6 +20,23 @@
   let model = $state<ChatModel>("default");
   let effort = $state<ChatEffort>("high");
   let permissionMode = $state<ChatPermissionMode>("default");
+  let worktree = $state(false);
+
+  // Preview only — mirrors worktreeSlug() in server/chat/worktree.ts exactly.
+  function slugPreview(title: string): string {
+    let slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/\.{2,}/g, ".")
+      .replace(/-{2,}/g, "-")
+      .slice(0, 48);
+    for (let prev = ""; prev !== slug; ) {
+      prev = slug;
+      slug = slug.replace(/^[-.]+|[-.]+$/g, "").replace(/\.lock$/, "");
+    }
+    return slug || "chat";
+  }
+  const worktreeName = $derived(`worktree-${slugPreview(name.trim() || `chat-${chatSessions.sessions.length + 1}`)}`);
 
   function selectHarness(next: ChatHarness): void {
     harness = next;
@@ -36,8 +53,10 @@
         model,
         effort,
         permissionMode,
+        worktree,
       });
       name = "";
+      worktree = false;
       chatSessions.showForm = false;
       navigate({ view: "project", name: project, session: session.id });
     } catch {
@@ -55,6 +74,7 @@
       <label>Model<select bind:value={model}>{#each CHAT_MODELS[harness] as choice}<option value={choice}>{choice}</option>{/each}</select></label>
       <label>Effort<select bind:value={effort}>{#each CHAT_EFFORTS[harness] as choice}<option value={choice}>{choice}</option>{/each}</select></label>
       <label>Mode<select bind:value={permissionMode}><option value="default">default</option><option value="plan">plan</option><option value="acceptEdits">accept edits</option><option value="bypassPermissions">skip approvals</option></select></label>
+      <label class="worktree-toggle"><input type="checkbox" bind:checked={worktree} /><span>Fresh worktree<em>{worktree ? `.worktrees/${worktreeName} — own branch, merge back when you're happy` : "isolated copy of the repo on its own branch"}</em></span></label>
       <div class="form-actions"><button type="submit" class="btn" disabled={creating}>{creating ? "Starting…" : "Start chat"}</button>{#if chatSessions.sessions.length}<button type="button" class="btn ghost" onclick={() => chatSessions.showForm = false}>Cancel</button>{/if}</div>
     </form>
   {:else if chatSessions.loading}

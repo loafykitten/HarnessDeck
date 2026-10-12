@@ -28,6 +28,9 @@ export interface ChatSession {
   effort: ChatEffort;
   permissionMode: ChatPermissionMode;
   canBypassPermissions: boolean;
+  /** Project-relative worktree path when the chat is isolated; null/absent
+      when it runs in the project root. */
+  worktree?: string | null;
   sdkSessionId: string | null;
   status: ChatStatus;
   costUsd: number;

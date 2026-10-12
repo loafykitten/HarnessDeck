@@ -16,6 +16,7 @@ type CreateChatInput = {
   model: ChatModel;
   effort: ChatEffort;
   permissionMode: ChatPermissionMode;
+  worktree: boolean;
 };
 
 const stores = new Map<string, ChatSessionsStore>();

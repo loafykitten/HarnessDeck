@@ -13,6 +13,8 @@
   const five = $derived(Math.max(0, Math.min(100, limits?.fiveHour?.pct ?? 0)));
   const week = $derived(Math.max(0, Math.min(100, limits?.weekly?.pct ?? 0)));
   const fable = $derived(Math.max(0, Math.min(100, app.usage?.limits?.weeklyModel?.pct ?? 0)));
+  // An isolated chat lives on its worktree branch, not the project's.
+  const shownBranch = $derived(session?.worktree ? session.worktree.split("/").pop() : branch);
 </script>
 
 <header class="chat-header">
@@ -25,7 +27,7 @@
     {/if}
   </div>
   <div class="chat-head-meta">
-    {#if branch}<span class="pill mono">{branch}</span>{/if}
+    {#if shownBranch}<span class="pill mono" title={session?.worktree ? `isolated worktree at ${session.worktree}` : undefined}>{shownBranch}</span>{/if}
     {#if session?.harness === "claude"}<span class="pill">{fmtTokens(session.totalTokens)} tokens</span>{/if}
     {#if session?.harness !== "codex"}<span class="pill">${(session?.costUsd ?? 0).toFixed(3)}</span>{/if}
     <span class="chat-connection" class:on={connected}>{reconnecting ? "reconnecting" : connected ? "live" : "offline"}</span>

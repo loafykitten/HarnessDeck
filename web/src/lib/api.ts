@@ -32,7 +32,7 @@ export const api = {
     j<ChatSession[]>(`/api/chat/sessions?project=${encodeURIComponent(project)}`),
   createChatSession: (input: {
     project: string; name: string; harness: ChatHarness; model: ChatModel;
-    effort: ChatEffort; permissionMode: ChatPermissionMode;
+    effort: ChatEffort; permissionMode: ChatPermissionMode; worktree: boolean;
   }) => j<ChatSession>("/api/chat/sessions", {
     method: "POST",
     headers: { "content-type": "application/json" },

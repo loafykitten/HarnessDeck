@@ -17,6 +17,9 @@ export interface ChatOptions {
 
 export interface ChatStartOptions extends ChatOptions {
   cwd: string;
+  /** Extra sandbox-writable paths beyond cwd — a linked worktree needs the
+      project's shared .git dir writable or every git command fails. */
+  extraWritableRoots?: string[];
   canBypassPermissions?: boolean;
   continuationId?: string;
   onContinuationId?: (id: string) => void;
