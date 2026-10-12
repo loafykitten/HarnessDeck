@@ -1,11 +1,9 @@
-import { homedir } from "node:os";
-import { join, dirname } from "node:path";
-import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { HARNESSES, type HarnessId } from "../harness/registry";
+import { LEGACY_STATE_DIR, STATE_DIR } from "../paths";
+import { readJson, writeJsonAtomic } from "../store";
 
-const APP_CONFIG_PATH = join(homedir(), ".config", "harnessdeck", "config.json");
-// pre-rename location (Claude Command era) — read-only fallback
-const LEGACY_APP_CONFIG_PATH = join(homedir(), ".config", "claude-command", "config.json");
+const APP_CONFIG_PATH = join(STATE_DIR, "config.json");
 
 export interface AppConfig {
   displayName: string;
@@ -27,21 +25,14 @@ const DEFAULT_APP_CONFIG: AppConfig = {
 };
 
 export async function getAppConfig(): Promise<AppConfig> {
-  try {
-    return { ...DEFAULT_APP_CONFIG, ...(await Bun.file(APP_CONFIG_PATH).json()) };
-  } catch { /* fall through to the pre-rename path */ }
-  try {
-    return { ...DEFAULT_APP_CONFIG, ...(await Bun.file(LEGACY_APP_CONFIG_PATH).json()) };
-  } catch {
-    return { ...DEFAULT_APP_CONFIG };
-  }
+  const stored = await readJson(APP_CONFIG_PATH, join(LEGACY_STATE_DIR, "config.json"));
+  return { ...DEFAULT_APP_CONFIG, ...(stored && typeof stored === "object" ? stored : {}) };
 }
 
 export async function setAppConfig(patch: Partial<AppConfig>): Promise<{ previous: AppConfig; next: AppConfig }> {
   const previous = await getAppConfig();
   const next = { ...previous, ...patch };
-  await mkdir(dirname(APP_CONFIG_PATH), { recursive: true });
-  await Bun.write(APP_CONFIG_PATH, JSON.stringify(next, null, 2) + "\n");
+  await writeJsonAtomic(APP_CONFIG_PATH, next, 2);
   return { previous, next };
 }
 

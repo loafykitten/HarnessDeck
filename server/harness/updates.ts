@@ -1,6 +1,5 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
-import type { HarnessId } from "./registry";
+import { run } from "../proc";
+import { harnessBin, type HarnessId } from "./registry";
 
 /** Per-harness self-updaters. Each harness gets its own updater instance —
     same caching, generation, and job semantics, different binary and
@@ -10,8 +9,6 @@ import type { HarnessId } from "./registry";
 // lands a few ms short of expiry, hits the cache, and the real check slips to
 // the following hour.
 const TTL = 25 * 60_000;
-
-const home = homedir();
 
 // The native installer's release manifest — what `claude update` actually
 // installs. npm is the fallback for npm-global installs (and for when GCS is
@@ -70,7 +67,7 @@ async function fetchText(url: string): Promise<string> {
 }
 
 interface UpdaterConfig {
-  bin: () => string;
+  harness: HarnessId;
   updateArgs: string[];
   latest: () => Promise<string | null>;
   notFoundHint: string;
@@ -87,17 +84,10 @@ function makeUpdater(cfg: UpdaterConfig): Updater {
   let generation = 0; // bumped whenever an update changes the installed version
   let job: UpdateJob | null = null;
 
+  /** Null when the binary isn't installed, or not on the path we expect. */
   async function installedVersion(): Promise<string | null> {
-    try {
-      const p = Bun.spawn([cfg.bin(), "--version"], { stdout: "pipe", stderr: "ignore" });
-      const timeout = setTimeout(() => p.kill(), 10_000);
-      const out = await new Response(p.stdout).text();
-      await p.exited;
-      clearTimeout(timeout);
-      return parseVersion(out.trim());
-    } catch {
-      return null; // not installed, or not on the path we expect
-    }
+    const res = await run([harnessBin(cfg.harness), "--version"], { timeoutMs: 10_000 });
+    return parseVersion(res.out.trim());
   }
 
   async function check(): Promise<Omit<UpdateStatus, "job">> {
@@ -163,23 +153,10 @@ function makeUpdater(cfg: UpdaterConfig): Updater {
 
     (async () => {
       try {
-        const p = Bun.spawn([cfg.bin(), ...cfg.updateArgs], {
-          stdout: "pipe", stderr: "pipe",
-          env: { ...process.env },
-        });
-        const timeout = setTimeout(() => p.kill(), 5 * 60_000);
-        const [out, errOut] = await Promise.all([
-          new Response(p.stdout).text(),
-          new Response(p.stderr).text(),
-        ]);
-        const code = await p.exited;
-        clearTimeout(timeout);
-        started.output = `${out}${errOut}`.trim().slice(-2000);
-        started.status = code === 0 ? "done" : "error";
-        if (code !== 0 && !started.output) started.output = `update exited ${code}`;
-      } catch (e) {
-        started.status = "error";
-        started.output = e instanceof Error ? e.message : String(e);
+        const res = await run([harnessBin(cfg.harness), ...cfg.updateArgs], { timeoutMs: 5 * 60_000 });
+        started.output = `${res.out}${res.err}`.trim().slice(-2000);
+        started.status = res.ok ? "done" : "error";
+        if (!res.ok && !started.output) started.output = `update exited ${res.code}`;
       } finally {
         started.finishedAt = Date.now();
         // The installed version just moved. Bump the generation so no in-flight
@@ -199,9 +176,7 @@ function makeUpdater(cfg: UpdaterConfig): Updater {
 
 export const updaters: Record<HarnessId, Updater> = {
   claude: makeUpdater({
-    // PATH first — npm-global and Homebrew installs live elsewhere — then the
-    // native installer's location, which is what launchd's PATH usually finds.
-    bin: () => Bun.which("claude") ?? join(home, ".local", "bin", "claude"),
+    harness: "claude",
     updateArgs: ["update"],
     latest: async () => {
       try {
@@ -213,7 +188,7 @@ export const updaters: Record<HarnessId, Updater> = {
     notFoundHint: "claude not found on PATH or at ~/.local/bin/claude",
   }),
   codex: makeUpdater({
-    bin: () => Bun.which("codex") ?? join(home, ".local", "bin", "codex"),
+    harness: "codex",
     updateArgs: ["update"],
     latest: async () => {
       try {

@@ -12,6 +12,14 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/** A JSON request. The content-type also keeps state-changing calls safe from
+    cross-origin forms: it forces a preflight the server never answers. */
+const jsonInit = (method: "POST" | "PUT", body: unknown): RequestInit => ({
+  method,
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify(body),
+});
+
 export const api = {
   projects: () => j<ProjectInfo[]>("/api/projects"),
   projectTree: (name: string, fresh = false) =>
@@ -23,21 +31,13 @@ export const api = {
     j<{ alive: boolean }>(`/api/sessions/${encodeURIComponent(id)}/alive`),
   harnesses: () => j<HarnessMeta[]>("/api/harnesses"),
   createSession: (project: string, name: string, harness: HarnessId) =>
-    j<{ id: string }>("/api/sessions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ project, name, harness }),
-    }),
+    j<{ id: string }>("/api/sessions", jsonInit("POST", { project, name, harness })),
   chatSessions: (project: string) =>
     j<ChatSession[]>(`/api/chat/sessions?project=${encodeURIComponent(project)}`),
   createChatSession: (input: {
     project: string; name: string; harness: ChatHarness; model: ChatModel;
     effort: ChatEffort; permissionMode: ChatPermissionMode; worktree: boolean;
-  }) => j<ChatSession>("/api/chat/sessions", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-  }),
+  }) => j<ChatSession>("/api/chat/sessions", jsonInit("POST", input)),
   deleteChatSession: (id: string) =>
     j<{ ok: boolean }>(`/api/chat/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   pasteChatImage: (sessionId: string, blob: Blob) =>
@@ -46,26 +46,14 @@ export const api = {
       { method: "POST", headers: { "content-type": blob.type || "image/png" }, body: blob },
     ),
   setCodexMode: (mode: CodexMode) =>
-    j<{ mode: CodexMode; configText: string }>("/api/codex/mode", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode }),
-    }),
+    j<{ mode: CodexMode; configText: string }>("/api/codex/mode", jsonInit("PUT", { mode })),
   killSession: (id: string) =>
     j<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   serverStatus: () => j<ServerStatus>("/api/server/status"),
   restartServer: (acknowledged: string[] = []) =>
-    j<{ restarting: boolean }>("/api/server/restart", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ acknowledged }),
-    }),
+    j<{ restarting: boolean }>("/api/server/restart", jsonInit("POST", { acknowledged })),
   rebuildWeb: () =>
-    j<{ ok: boolean }>("/api/server/rebuild-web", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}",
-    }),
+    j<{ ok: boolean }>("/api/server/rebuild-web", jsonInit("POST", {})),
   usage: () => j<Usage>("/api/usage"),
   greeting: () => j<Greeting>("/api/greeting"),
   news: () => j<News>("/api/news"),
@@ -73,11 +61,7 @@ export const api = {
   applyUpdate: (harness: HarnessId) => j<UpdateJob>(`/api/updates/apply?harness=${harness}`, { method: "POST" }),
   appConfig: () => j<AppConfig>("/api/config/app"),
   saveAppConfig: (cfg: Partial<AppConfig>) =>
-    j<AppConfig>("/api/config/app", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(cfg),
-    }),
+    j<AppConfig>("/api/config/app", jsonInit("PUT", cfg)),
   settingsText: (harness: HarnessId) =>
     fetch(`/api/config/settings?harness=${harness}`).then(r => r.text()),
   saveSettingsText: (harness: HarnessId, text: string) =>
@@ -101,19 +85,10 @@ export const api = {
   deleteSkill: (name: string) =>
     j<{ ok: boolean }>(`/api/skills/${encodeURIComponent(name)}`, { method: "DELETE" }),
   syncSkill: (name: string, to: HarnessId) =>
-    j<{ ok: boolean }>(`/api/skills/${encodeURIComponent(name)}/sync`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ to }),
-    }),
+    j<{ ok: boolean }>(`/api/skills/${encodeURIComponent(name)}/sync`, jsonInit("POST", { to })),
   installSkill: (url: string) =>
-    j<{ installed: string[]; skipped: string[] }>("/api/skills/install", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url }),
-    }),
+    j<{ installed: string[]; skipped: string[] }>("/api/skills/install", jsonInit("POST", { url })),
   generateSkill: (name: string, prompt: string) =>
-    j<{ job: string }>("/api/skills/generate", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, prompt }),
-    }),
+    j<{ job: string }>("/api/skills/generate", jsonInit("POST", { name, prompt })),
   skillJob: (id: string) => j<SkillJob>(`/api/skills/jobs/${id}`),
 };

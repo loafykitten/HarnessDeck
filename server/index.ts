@@ -1,4 +1,4 @@
-import type { WebSocketHandler } from "bun";
+import type { ServerWebSocket, WebSocketHandler } from "bun";
 import { err, json, rejectUntrustedRequest, serveStatic, type RouteHandler } from "./http";
 import { hasSession, reconcilePersistedSessions } from "./terminal/sessions";
 import { terminalRoutes } from "./terminal/routes";
@@ -30,19 +30,23 @@ await reconcilePersistedSessions();
 
 type WsData = TerminalWsData | ChatWsData;
 
+/** The upgrade stamped ws.data with exactly one of the two shapes, so the
+    handler picked by that shape always gets the data it was written for. */
+const handlerFor = (ws: ServerWebSocket<WsData>) =>
+  ("chatId" in ws.data ? chatWebsocket : terminalWebsocket) as WebSocketHandler<WsData>;
+
 const websocket: WebSocketHandler<WsData> = {
+  // Only this combined handler's options reach Bun. The default is 120s, and
+  // background tabs go quiet longer than that; clients also ping every 30s.
   idleTimeout: 960,
   open(ws) {
-    if ("chatId" in ws.data) chatWebsocket.open?.(ws as never);
-    else terminalWebsocket.open?.(ws as never);
+    handlerFor(ws).open?.(ws);
   },
   async message(ws, message) {
-    if ("chatId" in ws.data) await chatWebsocket.message?.(ws as never, message);
-    else await terminalWebsocket.message?.(ws as never, message);
+    await handlerFor(ws).message?.(ws, message);
   },
   close(ws, code, reason) {
-    if ("chatId" in ws.data) chatWebsocket.close?.(ws as never, code, reason);
-    else terminalWebsocket.close?.(ws as never, code, reason);
+    handlerFor(ws).close?.(ws, code, reason);
   },
 };
 

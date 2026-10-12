@@ -1,7 +1,7 @@
-import { lstat, mkdir, readdir, realpath, rename, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, dirname, join, normalize, relative } from "node:path";
+import { lstat, mkdir, readdir, realpath, rm, stat } from "node:fs/promises";
+import { dirname, join, normalize, relative } from "node:path";
 import { DEFAULT_HARNESS, HARNESSES, HARNESS_IDS, isHarnessId, type HarnessId } from "../harness/registry";
+import { run } from "../proc";
 
 /** Skills are identified by NAME across harnesses: ~/.claude/skills/foo and
     ~/.codex/skills/foo are the same skill "owned" by both harnesses. Reads
@@ -80,19 +80,6 @@ export function parseFrontmatter(text: string): Record<string, string> {
     if (kv) out[kv[1]] = kv[2].replace(/^["']|["']$/g, "");
   }
   return out;
-}
-
-export async function run(cmd: string[], opts: { cwd?: string; timeoutMs?: number } = {}):
-  Promise<{ ok: boolean; out: string; err: string }> {
-  const p = Bun.spawn(cmd, { cwd: opts.cwd, stdout: "pipe", stderr: "pipe" });
-  const timer = opts.timeoutMs ? setTimeout(() => p.kill(), opts.timeoutMs) : null;
-  const [out, err] = await Promise.all([
-    new Response(p.stdout).text(),
-    new Response(p.stderr).text(),
-  ]);
-  const code = await p.exited;
-  if (timer) clearTimeout(timer);
-  return { ok: code === 0, out, err };
 }
 
 // ---------- list / read / write ----------

@@ -4,7 +4,8 @@
   import { fmtAgo, fmtClock, fmtTokens, fmtUSD } from "../../utils/format";
   import type { CodexMode } from "../../types/api";
   import { clampPct, remaining } from "./format";
-  import UsageRing from "./UsageRing.svelte";
+  import RingCell from "./RingCell.svelte";
+  import QuotaCell from "./QuotaCell.svelte";
   import BurnChart from "./BurnChart.svelte";
   import UpdateChip from "./UpdateChip.svelte";
   import PlanBadge from "./PlanBadge.svelte";
@@ -57,29 +58,13 @@
     </div>
     <div class="hc-body">
       {#if cx.mode === "oauth"}
-        <div class="hc-cell ring-card">
-          <UsageRing idp="cx" pct={cxFive}/>
-          <div class="ring-info">
-            <h3>5-hour window</h3>
-            <div class="big">Current window</div>
-            <div class="meta">
-              Resets <em>{fmtClock(cx.limits?.fiveHour?.resetsAt ?? null)}</em><br>
-              {remaining(cx.limits?.fiveHour?.resetsAt ?? null)}
-              {#if cx.limits?.asOf}<br>snapshot {fmtAgo(new Date(cx.limits.asOf).getTime())}{/if}
-            </div>
-          </div>
-        </div>
+        <RingCell idp="cx" pct={cxFive} title="5-hour window">
+          Resets <em>{fmtClock(cx.limits?.fiveHour?.resetsAt ?? null)}</em><br>
+          {remaining(cx.limits?.fiveHour?.resetsAt ?? null)}
+          {#if cx.limits?.asOf}<br>snapshot {fmtAgo(new Date(cx.limits.asOf).getTime())}{/if}
+        </RingCell>
 
-        <div class="hc-cell">
-          <h3>Weekly quota</h3>
-          <div class="card-sub">Rolling 7-day allowance</div>
-          <div class="bar-wrap">
-            <div class="bar-num">{cxWeek ?? "–"}<span>%</span></div>
-            <div class="bar-label"><span>all usage</span><b>{cxWeek ?? "–"}%</b></div>
-            <div class="bar-frame"><div class="bar"><span class="bar-glow" style="width:{cxWeek ?? 0}%"></span><i style="width:{cxWeek ?? 0}%"></i></div></div>
-            <div class="reset">Resets <b>{fmtClock(cx.limits?.weekly?.resetsAt ?? null)}</b></div>
-          </div>
-        </div>
+        <QuotaCell label="all usage" pct={cxWeek} resetsAt={cx.limits?.weekly?.resetsAt ?? null} />
 
         <div class="hc-cell">
           <h3>This month</h3>

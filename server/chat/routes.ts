@@ -5,8 +5,8 @@ import {
   hasChatSession,
   listChatSessions,
 } from "./sessions";
+import { imageExtension, readImageUpload } from "../pastes";
 import {
-  chatImageExtension,
   MAX_CHAT_IMAGE_BYTES,
   resolveChatImage,
   saveChatImage,
@@ -17,6 +17,7 @@ import {
   isChatModel,
   isChatPermissionMode,
 } from "./options";
+import { defaultChatEffort } from "../../shared/chat";
 
 export const chatRoutes: RouteHandler = async (req, url) => {
   if (url.pathname === "/api/chat/sessions" && req.method === "GET") {
@@ -28,10 +29,10 @@ export const chatRoutes: RouteHandler = async (req, url) => {
       return err("project and name required");
     }
     const harness = body.harness ?? "claude";
-    const model = body.model ?? "default";
-    const effort = body.effort ?? (harness === "codex" ? "medium" : "high");
-    const permissionMode = body.permissionMode ?? "default";
     if (!isChatHarness(harness)) return err(`unsupported chat harness: ${harness}`);
+    const model = body.model ?? "default";
+    const effort = body.effort ?? defaultChatEffort(harness);
+    const permissionMode = body.permissionMode ?? "default";
     if (!isChatModel(harness, model)) return err(`unknown ${harness} model: ${model}`);
     if (!isChatEffort(harness, effort)) return err(`unknown ${harness} effort: ${effort}`);
     if (!isChatPermissionMode(permissionMode)) return err(`unknown permission mode: ${permissionMode}`);
@@ -54,15 +55,11 @@ export const chatRoutes: RouteHandler = async (req, url) => {
   if (imageMatch && req.method === "POST") {
     const id = decodeURIComponent(imageMatch[1]);
     if (!(await hasChatSession(id))) return err("no such chat session", 404);
-    const contentLength = Number(req.headers.get("content-length"));
-    if (Number.isFinite(contentLength) && contentLength > MAX_CHAT_IMAGE_BYTES) {
-      return err("image too large (max 5 MB)", 413);
-    }
-    const extension = chatImageExtension(req.headers.get("content-type") ?? "");
+    // Chat images are inlined into the request, so the harness must accept the type.
+    const extension = imageExtension(req.headers.get("content-type") ?? "");
     if (!extension) return err("unsupported image type", 415);
-    const blob = await req.blob();
-    if (blob.size === 0) return err("empty body");
-    if (blob.size > MAX_CHAT_IMAGE_BYTES) return err("image too large (max 5 MB)", 413);
+    const blob = await readImageUpload(req, MAX_CHAT_IMAGE_BYTES, "image too large (max 5 MB)");
+    if (blob instanceof Response) return blob;
     const path = await saveChatImage(blob, extension);
     return json({ ok: true, path });
   }

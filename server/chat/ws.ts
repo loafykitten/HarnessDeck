@@ -15,7 +15,6 @@ import { isChatEffort, isChatModel, isChatPermissionMode } from "./options";
 export type ChatWsData = { chatId: string; unsubscribe?: () => void };
 
 export const chatWebsocket: WebSocketHandler<ChatWsData> = {
-  idleTimeout: 960,
   open(ws) {
     const init = chatInit(ws.data.chatId);
     if (!init) return ws.close(1008, "no such chat session");

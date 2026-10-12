@@ -1,9 +1,9 @@
-import { homedir } from "node:os";
-import { join, dirname } from "node:path";
-import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { STATE_DIR } from "../paths";
+import { readJson, serialQueue, writeJsonAtomic } from "../store";
 import type { NewsItem } from "./types";
 
-const STATE_PATH = join(homedir(), ".config", "harnessdeck", "news.json");
+const STATE_PATH = join(STATE_DIR, "news.json");
 export const MAX_ITEMS = 40; // stored; payload trims further
 // must comfortably exceed the sitemap seed volume (~260 URLs today) plus
 // months of feed ids — evicted seeds would resurface as "new" stories
@@ -19,29 +19,19 @@ let state: NewsState | null = null;
 
 export async function ensureLoaded(): Promise<NewsState> {
   if (state) return state;
-  try {
-    const raw = await Bun.file(STATE_PATH).json();
-    state = { seen: raw.seen ?? [], items: raw.items ?? [], updatedAt: raw.updatedAt ?? null };
-  } catch {
-    state = { seen: [], items: [], updatedAt: null };
-  }
+  const raw = await readJson(STATE_PATH) as Partial<NewsState> | null;
+  state = { seen: raw?.seen ?? [], items: raw?.items ?? [], updatedAt: raw?.updatedAt ?? null };
   return state;
 }
 
 export async function save(): Promise<void> {
   if (!state) return;
-  await mkdir(dirname(STATE_PATH), { recursive: true });
-  await Bun.write(STATE_PATH, JSON.stringify(state) + "\n");
+  await writeJsonAtomic(STATE_PATH, state);
 }
 
 /* The feeds and slow tiers run concurrently but share NewsState; serializing
    their read-modify-write sections is what makes the dedup sound. */
-let stateQueue: Promise<unknown> = Promise.resolve();
-export function locked<T>(fn: () => Promise<T>): Promise<T> {
-  const p = stateQueue.then(fn, fn);
-  stateQueue = p.catch(() => {});
-  return p;
-}
+export const locked = serialQueue();
 
 /* Sitemap/watch seeds must survive eviction — a dropped seed makes an archive
    page look brand-new on the next poll. Only non-seed ids age out. */

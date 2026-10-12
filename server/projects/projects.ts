@@ -1,9 +1,8 @@
 import { readdir, stat } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { DEV_DIR, listSessionsBase } from "../terminal/sessions";
-
-const CLAUDE_PROJECTS = join(homedir(), ".claude", "projects");
+import { DEV_DIR, claudeTranscriptDir } from "../paths";
+import { run } from "../proc";
+import { listSessionsBase } from "../terminal/sessions";
 
 export interface Project {
   name: string;
@@ -19,27 +18,14 @@ export interface Project {
   } | null;
 }
 
-/** Claude Code's transcript dir slug: path with '/' and '.' replaced by '-'. */
-function transcriptSlug(dir: string): string {
-  return dir.replace(/[/.]/g, "-");
-}
-
 async function git(dir: string, ...args: string[]): Promise<string | null> {
-  try {
-    // This polls every project on a timer: never let repo config (fsmonitor,
-    // hooks) run a program on the server's behalf.
-    const p = Bun.spawn(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", ...args], {
-      cwd: dir, stdout: "pipe", stderr: "pipe",
-    });
-    const [out, , code] = await Promise.all([
-      new Response(p.stdout).text(),
-      new Response(p.stderr).text(),
-      p.exited,
-    ]);
-    return code === 0 ? out.trim() : null;
-  } catch {
-    return null;
-  }
+  // This polls every project on a timer: never let repo config (fsmonitor,
+  // hooks) run a program on the server's behalf.
+  const res = await run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", ...args], {
+    cwd: dir,
+    trim: true,
+  });
+  return res.ok ? res.out : null;
 }
 
 // the dashboard polls /api/projects every 5s; don't fork 6 git processes per
@@ -135,7 +121,7 @@ async function transcriptActivityCached(dir: string): Promise<number | null> {
   if (hit && Date.now() - hit.at < TRANSCRIPT_TTL) return hit.lastActivity;
   let lastActivity: number | null = null;
   try {
-    const tdir = join(CLAUDE_PROJECTS, transcriptSlug(dir));
+    const tdir = claudeTranscriptDir(dir);
     const files = (await readdir(tdir)).filter(f => f.endsWith(".jsonl"));
     const stats = await Promise.all(files.map(f => stat(join(tdir, f)).catch(() => null)));
     for (const s of stats) {

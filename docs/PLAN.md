@@ -145,8 +145,10 @@ arbitrary code by design — it must never listen beyond 127.0.0.1.
   (`organization.rate_limit_tier`), renewal anniversary
   (`organization.subscription_created_at`), and account display name.
 - Bun's WS `idleTimeout` defaults to 120s — background tabs idle longer.
-  Raise it AND ping from the client AND auto-reconnect on close (checking
-  whether the tmux session still exists to distinguish drop from death).
+  Raise it (on the handler passed to `Bun.serve` — options on the per-feature
+  handlers it dispatches to are ignored) AND ping from the client AND
+  auto-reconnect on close (checking whether the tmux session still exists to
+  distinguish drop from death).
 - xterm custom key handlers must return false for EVERY event type of an
   intercepted key: cancelling only keydown lets the keypress path emit a
   stray `\r`. Cost hours: every newline encoding "mysteriously submitted".
@@ -155,4 +157,4 @@ arbitrary code by design — it must never listen beyond 127.0.0.1.
   between the bytes (they share the input channel) and break.
 - `tmux send-keys`/`set-option -t` take pane-style targets that reject the
   `=exact` prefix (`has-session`/`kill-session`/`attach` accept it).
-- Debug ws frames with `CC_WS_DEBUG=1` (logs to /tmp/cc-ws-debug.log).
+- Debug ws frames with `HARNESSDECK_WS_DEBUG=1` (logs to /tmp/harnessdeck-ws-debug.log).

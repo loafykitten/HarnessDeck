@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
+import { harnessBin } from "../harness/registry";
 import type {
   ClientNotification,
   ClientRequest,
@@ -38,7 +38,7 @@ import type {
   PermissionResponse,
   QuestionResponse,
 } from "./driver";
-import { chatImageMediaType } from "./images";
+import { readImageBase64 } from "./images";
 
 type RpcError = { code: number; message: string; data?: unknown };
 type RpcResponse = { id: string | number; result?: unknown; error?: RpcError };
@@ -203,7 +203,7 @@ class CodexChatHandle implements ChatHandle {
 
   constructor(private options: ChatStartOptions) {
     this.threadId = options.continuationId ?? null;
-    this.proc = Bun.spawn(["codex", "app-server"], {
+    this.proc = Bun.spawn([harnessBin("codex"), "app-server"], {
       cwd: options.cwd,
       stdin: "pipe",
       stdout: "pipe",
@@ -234,8 +234,8 @@ class CodexChatHandle implements ChatHandle {
     const imageUrls: string[] = [];
     try {
       for (const path of imagePaths) {
-        const data = (await readFile(path)).toString("base64");
-        imageUrls.push(`data:${chatImageMediaType(path)};base64,${data}`);
+        const { mediaType, data } = await readImageBase64(path);
+        imageUrls.push(`data:${mediaType};base64,${data}`);
       }
     } catch (error) {
       this.emit({ type: "error", message: error instanceof Error ? error.message : String(error) });

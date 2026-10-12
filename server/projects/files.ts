@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
+import { run } from "../proc";
 import { resolveProjectDir } from "./resolve";
 
 export type TreeGitStatus = "tracked" | "untracked" | "ignored" | "none";
@@ -35,21 +36,11 @@ const treeCache = new Map<string, { at: number; value: ProjectTree }>();
 const stackCache = new Map<string, { at: number; value: { stack: string[] } }>();
 
 async function gitFiles(dir: string, ...args: string[]): Promise<Set<string> | null> {
-  try {
-    // No repo-configured programs (fsmonitor, hooks): an agent may have written them.
-    const p = Bun.spawn(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "ls-files", "-z", ...args], {
-      cwd: dir, stdout: "pipe", stderr: "pipe",
-    });
-    const [out, , code] = await Promise.all([
-      new Response(p.stdout).text(),
-      new Response(p.stderr).text(),
-      p.exited,
-    ]);
-    if (code !== 0) return null;
-    return new Set(out.split("\0").filter(Boolean));
-  } catch {
-    return null;
-  }
+  // No repo-configured programs (fsmonitor, hooks): an agent may have written them.
+  const res = await run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "ls-files", "-z", ...args], {
+    cwd: dir,
+  });
+  return res.ok ? new Set(res.out.split("\0").filter(Boolean)) : null;
 }
 
 function sortNodes(nodes: TreeNode[]): void {

@@ -5,6 +5,10 @@
   import {
     CHAT_EFFORTS,
     CHAT_MODELS,
+    CHAT_PERMISSION_MODES,
+    PERMISSION_MODE_LABELS,
+    defaultChatEffort,
+    worktreeSlug,
     type ChatEffort,
     type ChatHarness,
     type ChatModel,
@@ -18,30 +22,17 @@
   let name = $state("");
   let harness = $state<ChatHarness>("claude");
   let model = $state<ChatModel>("default");
-  let effort = $state<ChatEffort>("high");
+  let effort = $state<ChatEffort>(defaultChatEffort("claude"));
   let permissionMode = $state<ChatPermissionMode>("default");
   let worktree = $state(false);
 
-  // Preview only — mirrors worktreeSlug() in server/chat/worktree.ts exactly.
-  function slugPreview(title: string): string {
-    let slug = title
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]+/g, "-")
-      .replace(/\.{2,}/g, ".")
-      .replace(/-{2,}/g, "-")
-      .slice(0, 48);
-    for (let prev = ""; prev !== slug; ) {
-      prev = slug;
-      slug = slug.replace(/^[-.]+|[-.]+$/g, "").replace(/\.lock$/, "");
-    }
-    return slug || "chat";
-  }
-  const worktreeName = $derived(`worktree-${slugPreview(name.trim() || `chat-${chatSessions.sessions.length + 1}`)}`);
+  // Preview only: the server names the worktree with the same slug.
+  const worktreeName = $derived(`worktree-${worktreeSlug(name.trim() || `chat-${chatSessions.sessions.length + 1}`)}`);
 
   function selectHarness(next: ChatHarness): void {
     harness = next;
     model = "default";
-    effort = next === "codex" ? "medium" : "high";
+    effort = defaultChatEffort(next);
   }
 
   async function create(): Promise<void> {
@@ -73,7 +64,7 @@
       <fieldset><legend>Agent</legend><div class="agent-pick"><button type="button" class:on={harness === "claude"} onclick={() => selectHarness("claude")}><span class="hx claude">Claude</span></button><button type="button" class:on={harness === "codex"} onclick={() => selectHarness("codex")}><span class="hx codex">Codex</span></button></div></fieldset>
       <label>Model<select bind:value={model}>{#each CHAT_MODELS[harness] as choice}<option value={choice}>{choice}</option>{/each}</select></label>
       <label>Effort<select bind:value={effort}>{#each CHAT_EFFORTS[harness] as choice}<option value={choice}>{choice}</option>{/each}</select></label>
-      <label>Mode<select bind:value={permissionMode}><option value="default">default</option><option value="plan">plan</option><option value="acceptEdits">accept edits</option><option value="bypassPermissions">skip approvals</option></select></label>
+      <label>Mode<select bind:value={permissionMode}>{#each CHAT_PERMISSION_MODES as choice}<option value={choice}>{PERMISSION_MODE_LABELS[choice]}</option>{/each}</select></label>
       <label class="worktree-toggle"><input type="checkbox" bind:checked={worktree} /><span>Fresh worktree<em>{worktree ? `.worktrees/${worktreeName} — own branch, merge back when you're happy` : "isolated copy of the repo on its own branch"}</em></span></label>
       <div class="form-actions"><button type="submit" class="btn" disabled={creating}>{creating ? "Starting…" : "Start chat"}</button>{#if chatSessions.sessions.length}<button type="button" class="btn ghost" onclick={() => chatSessions.showForm = false}>Cancel</button>{/if}</div>
     </form>
@@ -81,7 +72,7 @@
     <div class="chat-loading">Loading chats…</div>
   {:else}
     {#each chatSessions.sessions as session (session.id)}
-      <ChatPane {project} sessionId={session.id} active={session.id === activeId} {branch} onSession={(updated) => chatSessions.update(updated)} />
+      <ChatPane {project} {session} active={session.id === activeId} {branch} />
     {/each}
   {/if}
   {#if chatSessions.error}<div class="chat-error shell-error">{chatSessions.error}</div>{/if}

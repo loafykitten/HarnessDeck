@@ -1,92 +1,15 @@
-export type ChatHarness = "claude" | "codex";
-export type ClaudeChatModel = "default" | "fable" | "opus" | "sonnet" | "haiku";
-export type CodexChatModel = "default" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna";
-export type ChatModel = ClaudeChatModel | CodexChatModel;
-export type ClaudeChatEffort = "low" | "medium" | "high" | "xhigh" | "max";
-export type CodexChatEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-export type ChatEffort = ClaudeChatEffort | CodexChatEffort;
-export type ChatPermissionMode = "default" | "plan" | "acceptEdits" | "bypassPermissions";
-export type ChatStatus = "working" | "waiting" | "idle";
-export type RequestOutcome = "answered" | "allowed" | "always-allowed" | "denied" | "dismissed";
+/* The chat protocol lives in shared/chat.ts, where the server reads it too;
+   this module re-exports it for the UI alongside the web-only shapes. */
+import type { ChatPermissionMode, ChatQuestion } from "../../../shared/chat";
 
-export const CHAT_MODELS = {
-  claude: ["default", "fable", "opus", "sonnet", "haiku"],
-  codex: ["default", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
-} as const satisfies Record<ChatHarness, readonly ChatModel[]>;
+export * from "../../../shared/chat";
 
-export const CHAT_EFFORTS = {
-  claude: ["low", "medium", "high", "xhigh", "max"],
-  codex: ["low", "medium", "high", "xhigh", "max", "ultra"],
-} as const satisfies Record<ChatHarness, readonly ChatEffort[]>;
-
-export interface ChatSession {
-  id: string;
-  project: string;
-  name: string;
-  harness: ChatHarness;
-  model: ChatModel;
-  effort: ChatEffort;
-  permissionMode: ChatPermissionMode;
-  canBypassPermissions: boolean;
-  /** Project-relative worktree path when the chat is isolated; null/absent
-      when it runs in the project root. */
-  worktree?: string | null;
-  sdkSessionId: string | null;
-  status: ChatStatus;
-  costUsd: number;
-  totalTokens: number;
-  /** Current context occupancy: tokens in the window as of the last turn. */
-  contextUsed?: number;
-  /** Context window size reported by the harness; null when unknown. */
-  contextWindow?: number | null;
-  created: number;
-  lastActivity: number;
-}
-
-export interface ChatContext {
-  used: number;
-  window: number | null;
-}
-
-export interface ChatQuestion {
-  question: string;
-  header: string;
-  options: { label: string; description: string; preview?: string }[];
-  multiSelect: boolean;
-}
-
-type Sequenced = { seq: number };
-export type ChatEvent = Sequenced & (
-  | { type: "delta"; kind: "text" | "thinking"; text: string; parentToolUseId?: string }
-  | { type: "block"; role: "user" | "assistant"; content: string; images?: string[]; parentToolUseId?: string }
-  | { type: "tool"; phase: "start" | "end"; id: string; name: string; input?: unknown; result?: unknown; isError?: boolean; parentToolUseId?: string }
-  | { type: "permission_request"; id: string; toolName: string; input: Record<string, unknown>; suggestions?: unknown[] }
-  | { type: "question_request"; id: string; questions: ChatQuestion[] }
-  | { type: "request_resolved"; id: string; outcome: RequestOutcome }
-  /** The session's effective options after a set_options, whether or not the change stuck. */
-  | { type: "options"; model: ChatModel; effort: ChatEffort; permissionMode: ChatPermissionMode }
-  | { type: "status"; status: ChatStatus }
-  | { type: "context"; context: ChatContext }
-  | { type: "result"; costUsd: number; usage: unknown; durationMs: number; context?: ChatContext }
-  | { type: "error"; message: string }
-);
-
-export interface ChatInit {
-  type: "init";
-  seq: number;
-  /** Server boot id; changes on restart, when seqs restart with the rebuilt backlog. */
-  epoch: string;
-  session: ChatSession;
-  backlog: ChatEvent[];
-}
-
-export type ChatClientMessage =
-  | { type: "user_message"; text: string; imagePaths?: string[] }
-  | { type: "permission_response"; id: string; behavior: "allow" | "deny"; updatedInput?: Record<string, unknown>; always?: boolean; message?: string }
-  | { type: "question_response"; id: string; answers: Record<string, string[]> }
-  | { type: "set_options"; model?: ChatModel; effort?: ChatEffort; permissionMode?: ChatPermissionMode }
-  | { type: "interrupt" }
-  | { type: "ping" };
+export const PERMISSION_MODE_LABELS: Record<ChatPermissionMode, string> = {
+  default: "default",
+  plan: "plan",
+  acceptEdits: "accept edits",
+  bypassPermissions: "skip approvals",
+};
 
 export type ChatFeedItem =
   | { id: string; type: "message"; role: "user" | "assistant"; text: string; images?: string[]; streaming?: boolean; parentToolUseId?: string }

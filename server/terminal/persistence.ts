@@ -1,10 +1,9 @@
-import { mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { isHarnessId, type HarnessId } from "../harness/registry";
+import { STATE_DIR } from "../paths";
+import { readJson, serialQueue, writeJsonAtomic } from "../store";
 
-const SESSION_REGISTRY_PATH = process.env.HARNESSDECK_SESSIONS_PATH
-  ?? join(homedir(), ".config", "harnessdeck", "sessions.json");
+const SESSION_REGISTRY_PATH = process.env.HARNESSDECK_SESSIONS_PATH ?? join(STATE_DIR, "sessions.json");
 
 export interface PersistedSession {
   id: string;
@@ -26,33 +25,21 @@ function isPersistedSession(value: unknown): value is PersistedSession {
 }
 
 export async function readSessionRegistry(): Promise<PersistedSession[]> {
-  try {
-    const value: unknown = await Bun.file(SESSION_REGISTRY_PATH).json();
-    if (!Array.isArray(value)) return [];
-    return value.filter(isPersistedSession);
-  } catch {
-    return [];
-  }
+  const value = await readJson(SESSION_REGISTRY_PATH);
+  return Array.isArray(value) ? value.filter(isPersistedSession) : [];
 }
 
-async function writeSessionRegistry(entries: PersistedSession[]): Promise<void> {
-  await mkdir(dirname(SESSION_REGISTRY_PATH), { recursive: true });
-  await Bun.write(SESSION_REGISTRY_PATH, JSON.stringify(entries, null, 2) + "\n");
-}
-
-let mutationQueue: Promise<void> = Promise.resolve();
+const mutations = serialQueue();
 
 function mutateSessionRegistry(
   mutate: (entries: PersistedSession[]) => PersistedSession[],
 ): Promise<void> {
-  const pending = mutationQueue.then(async () => {
+  return mutations(async () => {
     const previous = await readSessionRegistry();
     const next = mutate(previous);
     if (next === previous) return;
-    await writeSessionRegistry(next);
+    await writeJsonAtomic(SESSION_REGISTRY_PATH, next, 2);
   });
-  mutationQueue = pending.catch(() => {});
-  return pending;
 }
 
 export function addSessionRegistryEntry(entry: PersistedSession): Promise<void> {

@@ -1,7 +1,6 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { CODEX_HOME } from "../paths";
 
-export const CODEX_HOME = join(homedir(), ".codex");
 // env override exists so tests can exercise the mode toggle on a copy
 const CONFIG_TOML = process.env.HD_CODEX_CONFIG ?? join(CODEX_HOME, "config.toml");
 
@@ -67,13 +66,6 @@ export async function setCodexMode(mode: CodexMode):
   const configText = newHead + text.slice(head.length);
   await Bun.write(CONFIG_TOML, configText);
   return { mode, configText };
-}
-
-/** Display name of the configured provider: resolves the (active or
-    commented) model_provider id to its [model_providers.<id>] `name`,
-    falling back to the id itself. Null when config.toml has no provider. */
-export async function getCodexProvider(): Promise<string | null> {
-  return (await getCodexConfig()).providerName;
 }
 
 export interface CodexPlan {

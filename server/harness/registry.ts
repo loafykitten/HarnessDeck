@@ -1,5 +1,5 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { CLAUDE_HOME, CODEX_HOME, HOME } from "../paths";
 
 /** The harness registry: every agent CLI HarnessDeck can drive.
     Adding a harness = adding an entry here plus the per-harness bits listed
@@ -11,7 +11,7 @@ export type HarnessId = "claude" | "codex";
 export interface Harness {
   id: HarnessId;
   label: string;
-  /** Absolute path preferred; falls back to PATH lookup in the login shell. */
+  /** Resolved at startup by harnessBin(); see there. */
   bin: string;
   /** Commands used to resume a conversation after restoring a tmux session. */
   resumeLast: string;
@@ -28,9 +28,18 @@ export interface Harness {
   waiting: RegExp;
 }
 
-const home = homedir();
-const claudeBin = Bun.which("claude") ?? join(home, ".local", "bin", "claude");
-const codexBin = Bun.which("codex") ?? "codex";
+/** The harness CLI to run. PATH first — npm-global and Homebrew installs
+    live there — then the native installers' ~/.local/bin, which a minimal
+    launchd PATH can lack. Neither found: the bare name, left to a later PATH
+    lookup (the tmux sessions' login shell has the user's full PATH). Callers
+    that spawn on demand resolve per call, so an install or update while the
+    server runs is picked up. */
+export function harnessBin(id: HarnessId): string {
+  return Bun.which(id) ?? Bun.which(id, { PATH: join(HOME, ".local", "bin") }) ?? id;
+}
+
+const claudeBin = harnessBin("claude");
+const codexBin = harnessBin("codex");
 
 export const HARNESSES: Record<HarnessId, Harness> = {
   claude: {
@@ -39,10 +48,10 @@ export const HARNESSES: Record<HarnessId, Harness> = {
     bin: claudeBin,
     resumeLast: `${claudeBin} --continue`,
     resumePick: `${claudeBin} --resume`,
-    skillsDir: join(home, ".claude", "skills"),
-    mdPath: join(home, ".claude", "CLAUDE.md"),
+    skillsDir: join(CLAUDE_HOME, "skills"),
+    mdPath: join(CLAUDE_HOME, "CLAUDE.md"),
     mdLabel: "~/.claude/CLAUDE.md",
-    settingsPath: join(home, ".claude", "settings.json"),
+    settingsPath: join(CLAUDE_HOME, "settings.json"),
     settingsLabel: "~/.claude/settings.json",
     settingsFormat: "json",
     working: /… \(\d+m? ?\d*s ?·|esc to interrupt/,
@@ -54,10 +63,10 @@ export const HARNESSES: Record<HarnessId, Harness> = {
     bin: codexBin,
     resumeLast: `${codexBin} resume --last`,
     resumePick: `${codexBin} resume`,
-    skillsDir: join(home, ".codex", "skills"),
-    mdPath: join(home, ".codex", "AGENTS.md"),
+    skillsDir: join(CODEX_HOME, "skills"),
+    mdPath: join(CODEX_HOME, "AGENTS.md"),
     mdLabel: "~/.codex/AGENTS.md",
-    settingsPath: join(home, ".codex", "config.toml"),
+    settingsPath: join(CODEX_HOME, "config.toml"),
     settingsLabel: "~/.codex/config.toml",
     settingsFormat: "toml",
     working: /[Ee]sc to interrupt|Working \(\d/,

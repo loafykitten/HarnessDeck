@@ -1,6 +1,6 @@
-import { app, navigate, gotoProjects, projectSessions } from "../stores/state.svelte";
-import { getChatSessionsStore, projectMode } from "../stores/chatSessions.svelte";
+import { app, navigate, gotoProjects, projectWorkspace } from "../stores/state.svelte";
 import { triggerSlopmaxx } from "../components/pets/mascot";
+import { cycle } from "../utils/cycle";
 
 // ⌃1 dashboard · ⌃2 projects (last active; press again to cycle, ⌃⇧2 backward)
 // ⌃3 skills · ⌃4 config · ⌃⇧[ / ⌃⇧] prev/next visible session tab · ⌃⇧S slopmaxx the mascot.
@@ -11,27 +11,15 @@ import { triggerSlopmaxx } from "../components/pets/mascot";
 function cycleProject(dir: 1 | -1) {
   const route = app.route;
   if (route.view !== "project" || app.projects.length === 0) return;
-  const names = app.projects.map(p => p.name);
-  const i = names.indexOf(route.name);
-  navigate({ view: "project", name: names[(i + dir + names.length) % names.length] });
+  navigate({ view: "project", name: cycle(app.projects.map(p => p.name), route.name, dir) });
 }
 
 function cycleSession(dir: 1 | -1) {
   const route = app.route;
   if (route.view !== "project") return;
-  if (projectMode(route.name) === "chat") {
-    const sess = getChatSessionsStore(route.name).sessions;
-    if (sess.length < 2) return;
-    const cur = route.session && sess.some(s => s.id === route.session) ? route.session : sess[0].id;
-    const i = sess.findIndex(s => s.id === cur);
-    navigate({ view: "project", name: route.name, session: sess[(i + dir + sess.length) % sess.length].id });
-    return;
-  }
-  const sess = projectSessions(route.name);
-  if (sess.length < 2) return;
-  const cur = route.session && sess.some(s => s.id === route.session) ? route.session : sess[0].id;
-  const i = sess.findIndex(s => s.id === cur);
-  navigate({ view: "project", name: route.name, session: sess[(i + dir + sess.length) % sess.length].id });
+  const { sessions, activeId } = projectWorkspace(route.name);
+  if (sessions.length < 2 || !activeId) return;
+  navigate({ view: "project", name: route.name, session: cycle(sessions.map(s => s.id), activeId, dir) });
 }
 
 function handle(e: KeyboardEvent): boolean {

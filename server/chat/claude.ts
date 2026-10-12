@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import {
   query,
@@ -21,7 +20,7 @@ import type {
   PermissionResponse,
   QuestionResponse,
 } from "./driver";
-import { chatImageMediaType } from "./images";
+import { readImageBase64 } from "./images";
 
 class AsyncQueue<T> implements AsyncIterable<T> {
   private values: T[] = [];
@@ -175,14 +174,8 @@ class ClaudeChatHandle implements ChatHandle {
     const content: Exclude<SDKUserMessage["message"]["content"], string> = [];
     if (text) content.push({ type: "text", text });
     for (const path of imagePaths) {
-      content.push({
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: chatImageMediaType(path),
-          data: (await readFile(path)).toString("base64"),
-        },
-      });
+      const { mediaType, data } = await readImageBase64(path);
+      content.push({ type: "image", source: { type: "base64", media_type: mediaType, data } });
     }
     // The SDK may have exited while the images were read; its input queue is
     // closed by then and the message would vanish under a "working" status.

@@ -1,5 +1,7 @@
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { appendFile, mkdir, readFile, realpath, stat } from "node:fs/promises";
+import { run, type RunResult } from "../proc";
+import { worktreeSlug } from "../../shared/chat";
 
 /* Opt-in per-chat git worktrees. An isolated chat gets a fresh checkout at
    <project>/.worktrees/worktree-<slug> on a branch of the same name, so the
@@ -24,45 +26,8 @@ export interface ChatWorktreeGit {
 // here would be outside any sandbox.
 const SAFE_GIT = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"];
 
-async function git(
-  cwd: string,
-  args: string[],
-  env?: Record<string, string>,
-): Promise<{ ok: boolean; out: string; err: string }> {
-  try {
-    const p = Bun.spawn(["git", ...SAFE_GIT, ...args], {
-      cwd,
-      stdout: "pipe",
-      stderr: "pipe",
-      env: env ? { ...process.env, ...env } : undefined,
-    });
-    const [out, err, code] = await Promise.all([
-      new Response(p.stdout).text(),
-      new Response(p.stderr).text(),
-      p.exited,
-    ]);
-    return { ok: code === 0, out: out.trim(), err: err.trim() };
-  } catch (error) {
-    return { ok: false, out: "", err: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-/** Chat titles are free text; branch and directory names are not. Length is
-    capped so ref lock filenames stay well under filesystem limits, and the
-    trim/.lock passes iterate until stable so no order of operations can
-    re-expose an invalid suffix. Mirrored by the preview in Chat.svelte. */
-export function worktreeSlug(name: string): string {
-  let slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/\.{2,}/g, ".")
-    .replace(/-{2,}/g, "-")
-    .slice(0, 48);
-  for (let prev = ""; prev !== slug; ) {
-    prev = slug;
-    slug = slug.replace(/^[-.]+|[-.]+$/g, "").replace(/\.lock$/, "");
-  }
-  return slug || "chat";
+function git(cwd: string, args: string[], env?: Record<string, string>): Promise<RunResult> {
+  return run(["git", ...SAFE_GIT, ...args], { cwd, env, trim: true });
 }
 
 /** Hide the nested checkouts from git status without dirtying the tracked

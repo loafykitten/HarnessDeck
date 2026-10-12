@@ -95,11 +95,6 @@ export class ChatSessionsStore {
       throw cause;
     }
   }
-
-  update(updated: ChatSession): void {
-    const session = this.sessions.find(item => item.id === updated.id);
-    if (session) Object.assign(session, updated);
-  }
 }
 
 export function getChatSessionsStore(project: string): ChatSessionsStore {

@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { DEV_DIR, resolveProjectDir } from "../projects/resolve";
+import { ttlCache } from "../cache";
 import { DEFAULT_HARNESS, HARNESSES, isHarnessId, type HarnessId } from "../harness/registry";
+import { DEV_DIR } from "../paths";
+import { run, type RunResult } from "../proc";
+import { resolveProjectDir } from "../projects/resolve";
 import {
   addSessionRegistryEntry,
   readSessionRegistry,
@@ -12,7 +15,6 @@ import {
 
 const PREFIX = "cc-";
 const SEP = "--";
-export { DEV_DIR };
 
 export type SessionStatus = "working" | "waiting" | "idle";
 
@@ -27,14 +29,8 @@ export interface Session {
   status: SessionStatus;
 }
 
-export async function tmux(...args: string[]): Promise<{ ok: boolean; out: string; err: string }> {
-  const p = Bun.spawn(["tmux", ...args], { stdout: "pipe", stderr: "pipe" });
-  const [out, err] = await Promise.all([
-    new Response(p.stdout).text(),
-    new Response(p.stderr).text(),
-  ]);
-  const code = await p.exited;
-  return { ok: code === 0, out, err };
+function tmux(...args: string[]): Promise<RunResult> {
+  return run(["tmux", ...args]);
 }
 
 let clipboardConfigured = false;
@@ -115,18 +111,14 @@ async function sessionStatus(id: string, harness: HarnessId): Promise<SessionSta
 }
 
 const SESSION_CACHE_TTL = 1_750;
-let sessionCacheGeneration = 0;
-let baseCache: { at: number; data: Session[] } | null = null;
-let baseInFlight: Promise<Session[]> | null = null;
-let statusCache: { at: number; data: Session[] } | null = null;
-let statusInFlight: Promise<Session[]> | null = null;
+const baseCache = ttlCache(SESSION_CACHE_TTL, computeBaseSessions);
+const statusCache = ttlCache(SESSION_CACHE_TTL, computeSessions);
 
+/** A create/kill/restore must show up in the very next listing, not a
+    listing that was already in flight against the old tmux state. */
 function invalidateSessionCaches(): void {
-  sessionCacheGeneration += 1;
-  baseCache = null;
-  baseInFlight = null;
-  statusCache = null;
-  statusInFlight = null;
+  baseCache.invalidate();
+  statusCache.invalidate();
 }
 
 async function computeBaseSessions(): Promise<Session[]> {
@@ -170,35 +162,20 @@ async function computeBaseSessions(): Promise<Session[]> {
   return sessions;
 }
 
-export async function listSessionsBase(): Promise<Session[]> {
-  if (baseCache && Date.now() - baseCache.at < SESSION_CACHE_TTL) return baseCache.data;
-  if (baseInFlight) return baseInFlight;
-  const generation = sessionCacheGeneration;
-  const pending = computeBaseSessions().then(data => {
-    if (generation === sessionCacheGeneration) baseCache = { at: Date.now(), data };
-    return data;
-  });
-  baseInFlight = pending;
-  const clear = () => { if (baseInFlight === pending) baseInFlight = null; };
-  pending.then(clear, clear);
-  return pending;
+/** Sessions without pane classification — enough for listings that don't
+    show status, at a fraction of the tmux calls. */
+export function listSessionsBase(): Promise<Session[]> {
+  return baseCache.get();
 }
 
-export async function listSessions(): Promise<Session[]> {
-  if (statusCache && Date.now() - statusCache.at < SESSION_CACHE_TTL) return statusCache.data;
-  if (statusInFlight) return statusInFlight;
-  const generation = sessionCacheGeneration;
-  const pending = (async () => {
-    const sessions = await listSessionsBase();
-    const statuses = await Promise.all(sessions.map(s => sessionStatus(s.id, s.harness)));
-    const data = sessions.map((session, i) => ({ ...session, status: statuses[i] }));
-    if (generation === sessionCacheGeneration) statusCache = { at: Date.now(), data };
-    return data;
-  })();
-  statusInFlight = pending;
-  const clear = () => { if (statusInFlight === pending) statusInFlight = null; };
-  pending.then(clear, clear);
-  return pending;
+async function computeSessions(): Promise<Session[]> {
+  const sessions = await listSessionsBase();
+  const statuses = await Promise.all(sessions.map(s => sessionStatus(s.id, s.harness)));
+  return sessions.map((session, i) => ({ ...session, status: statuses[i] }));
+}
+
+export function listSessions(): Promise<Session[]> {
+  return statusCache.get();
 }
 
 export async function createSession(project: string, name: string, harness: HarnessId = DEFAULT_HARNESS): Promise<{ id: string } | { error: string }> {

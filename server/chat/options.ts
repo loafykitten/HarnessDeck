@@ -1,21 +1,15 @@
-import type { ChatEffort, ChatHarness, ChatModel, ChatPermissionMode } from "./driver";
+import {
+  CHAT_EFFORTS,
+  CHAT_MODELS,
+  CHAT_PERMISSION_MODES,
+  type ChatEffort,
+  type ChatHarness,
+  type ChatModel,
+  type ChatPermissionMode,
+} from "../../shared/chat";
 
-export const CHAT_MODELS = {
-  claude: ["default", "fable", "opus", "sonnet", "haiku"],
-  codex: ["default", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
-} as const satisfies Record<ChatHarness, readonly ChatModel[]>;
-
-export const CHAT_EFFORTS = {
-  claude: ["low", "medium", "high", "xhigh", "max"],
-  codex: ["low", "medium", "high", "xhigh", "max", "ultra"],
-} as const satisfies Record<ChatHarness, readonly ChatEffort[]>;
-
-export const CHAT_PERMISSION_MODES = [
-  "default",
-  "plan",
-  "acceptEdits",
-  "bypassPermissions",
-] as const satisfies readonly ChatPermissionMode[];
+/* Request validation for chat options: the option lists themselves live in
+   shared/chat.ts, where the UI's pickers read them too. */
 
 export const isChatHarness = (value: unknown): value is ChatHarness =>
   value === "claude" || value === "codex";

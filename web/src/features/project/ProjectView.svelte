@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import "@xterm/xterm/css/xterm.css";
-  import { app, navigate, projectSessions, rebuildWeb, refreshCore, restartServer } from "../../stores/state.svelte";
-  import { getChatSessionsStore, projectMode, setProjectMode } from "../../stores/chatSessions.svelte";
+  import { app, navigate, projectSessions, projectWorkspace, rebuildWeb, refreshCore, restartServer } from "../../stores/state.svelte";
+  import { getChatSessionsStore, setProjectMode } from "../../stores/chatSessions.svelte";
   import { api } from "../../lib/api";
+  import { cycle } from "../../utils/cycle";
   import { fmtAgo } from "../../utils/format";
   import type { HarnessId } from "../../types/api";
   import FileTree from "./FileTree.svelte";
@@ -15,33 +16,20 @@
   let { project }: { project: string } = $props();
 
   const mySessions = $derived(projectSessions(project));
-  const chatSessions = $derived(getChatSessionsStore(project));
+  // Created here, not lazily inside the workspace derived below: state a
+  // derived creates isn't tracked by it, so it would never see the list load.
+  const chatSessions = getChatSessionsStore(untrack(() => project));
   const projInfo = $derived(app.projects.find(p => p.name === project));
 
-  // Mode is derived, not imperatively synced: a route session that belongs to
-  // either list wins (so deep links and hotkeys land in the right mode), the
-  // sticky per-project preference is only the fallback. An effect that flipped
-  // the store instead proved unreliable during the initial load cascade.
-  const columnMode = $derived.by(() => {
-    const routeSession = app.route.view === "project" ? app.route.session : undefined;
-    if (routeSession) {
-      if (mySessions.some(s => s.id === routeSession)) return "terminal";
-      if (chatSessions.sessions.some(s => s.id === routeSession)) return "chat";
-    }
-    return projectMode(project);
-  });
+  // Mode and open tab are derived from the route, not imperatively synced (an
+  // effect that flipped the store proved unreliable during the initial load
+  // cascade); hotkeys cycle tabs by navigating, through the same helper.
+  const workspace = $derived(projectWorkspace(project));
+  const columnMode = $derived(workspace.mode);
+  const activeId = $derived(workspace.activeId);
 
-  // Which session tab is open. The route is the source of truth (hotkeys
-  // cycle tabs by navigating); an invalid/absent route session → first tab.
-  const activeId = $derived.by(() => {
-    const routeSession = app.route.view === "project" ? app.route.session : undefined;
-    const sessions = columnMode === "chat" ? chatSessions.sessions : mySessions;
-    if (routeSession && sessions.some(s => s.id === routeSession)) return routeSession;
-    return sessions[0]?.id ?? null;
-  });
-
-  const sessionTabs = $derived(columnMode === "chat"
-    ? chatSessions.sessions.map(session => ({
+  const sessionTabs = $derived(workspace.mode === "chat"
+    ? workspace.sessions.map(session => ({
         id: session.id,
         name: session.name,
         harness: session.harness,
@@ -49,7 +37,7 @@
         activity: session.lastActivity,
         closeLabel: `Delete ${session.name}`,
       }))
-    : mySessions.map(session => ({
+    : workspace.sessions.map(session => ({
         id: session.id,
         name: session.name,
         harness: session.harness,
@@ -143,9 +131,7 @@
     app.harnesses.some(h => h.id === savedHarness) ? savedHarness as HarnessId : "claude");
 
   function cycleHarness(dir: 1 | -1 = 1) {
-    const ids = app.harnesses.map(h => h.id);
-    const i = ids.indexOf(newHarness);
-    newHarness = ids[(i + dir + ids.length) % ids.length];
+    newHarness = cycle(app.harnesses.map(h => h.id), newHarness, dir);
     localStorage.setItem("hd-new-harness", newHarness);
   }
 
@@ -178,7 +164,7 @@
   }
 
   async function closeSession(id: string) {
-    if (!confirm("Kill this session? The Claude process will be terminated.")) return;
+    if (!confirm("Kill this session? The agent process will be terminated.")) return;
     await api.killSession(id).catch(console.error);
     await refreshCore();
   }

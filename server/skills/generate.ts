@@ -1,7 +1,8 @@
 import { mkdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { HARNESSES } from "../harness/registry";
-import { INSTALL_DIR, run, sanitizeName } from "./skills";
+import { harnessBin } from "../harness/registry";
+import { run } from "../proc";
+import { INSTALL_DIR, sanitizeName } from "./skills";
 
 // ---------- generate from prompt (background job) ----------
 
@@ -61,7 +62,7 @@ export async function generateSkill(rawName: string, prompt: string):
   (async () => {
     try {
       const res = await run(
-        [HARNESSES.claude.bin, "-p", fullPrompt, "--model", "sonnet", "--output-format", "text"],
+        [harnessBin("claude"), "-p", fullPrompt, "--model", "sonnet", "--output-format", "text"],
         { cwd: dir, timeoutMs: 5 * 60_000 },
       );
       const ok = res.ok && await Bun.file(join(dir, "SKILL.md")).exists();

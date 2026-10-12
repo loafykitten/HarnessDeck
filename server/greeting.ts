@@ -1,9 +1,7 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { getAppConfig } from "./config/config";
+import { harnessBin } from "./harness/registry";
+import { run } from "./proc";
 import { listSessions } from "./terminal/sessions";
-
-const CLAUDE_BIN = join(homedir(), ".local", "bin", "claude");
 
 export interface Greeting {
   salutation: string;          // "Good evening, Fenn" (or no name)
@@ -95,13 +93,10 @@ async function generateWhimsy(name: string, weather: WeatherInfo | null): Promis
       `end with " ✦", no quotes, no emoji besides ✦) for a developer's dashboard. ` +
       `Context: name=${name || "friend"}; weather=${weather ? `${weather.tempF}°F ${weather.text} in ${weather.place}` : "unknown"}; ` +
       `active projects=${projects}. Reply with only the line.`;
-    const p = Bun.spawn(
-      [CLAUDE_BIN, "-p", prompt, "--model", "haiku", "--output-format", "text"],
-      { stdout: "pipe", stderr: "ignore", env: { ...process.env } },
+    const { out } = await run(
+      [harnessBin("claude"), "-p", prompt, "--model", "haiku", "--output-format", "text"],
+      { timeoutMs: 25_000, trim: true },
     );
-    const timeout = setTimeout(() => p.kill(), 25_000);
-    const out = (await new Response(p.stdout).text()).trim();
-    clearTimeout(timeout);
     if (out && out.length < 140) {
       whimsyCache = { at: Date.now(), line: out };
     }

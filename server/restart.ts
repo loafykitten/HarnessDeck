@@ -11,8 +11,9 @@ import { err, json, type RouteHandler } from "./http";
 const REPO_ROOT = join(import.meta.dir, "..");
 const BOOTED_AT = Date.now();
 
-/** Changes outside these paths (web/, docs/) don't need a server restart. */
-const RESTART_PATHS = ["server/", "package.json", "bun.lock"];
+/** Changes outside these paths (web/, docs/) don't need a server restart.
+    shared/ is imported by both sides, so it counts here and as a web input. */
+const RESTART_PATHS = ["server/", "shared/", "package.json", "bun.lock"];
 
 async function git(...args: string[]): Promise<string | null> {
   const proc = Bun.spawn(["git", ...args], { cwd: REPO_ROOT, stdout: "pipe", stderr: "ignore" });
@@ -33,8 +34,8 @@ const WEB_DIR = join(REPO_ROOT, "web");
     index.html fallback covers bundles built before the stamp existed. */
 const DIST_STAMP = join(WEB_DIR, "dist", ".built");
 const DIST_FALLBACK = join(WEB_DIR, "dist", "index.html");
-/** Inputs to build:web; everything else under web/ is output. */
-const WEB_SOURCE_ROOTS = ["src", "public", "scripts", "index.html", "vite.config.ts", "svelte.config.js", "package.json", "bun.lock"];
+/** Inputs to build:web, relative to web/; everything else under web/ is output. */
+const WEB_SOURCE_ROOTS = ["src", "public", "scripts", "index.html", "vite.config.ts", "svelte.config.js", "package.json", "bun.lock", "../shared"];
 
 /** Yields files AND directories: a deletion bumps only the parent dir's
     mtime, so dirs must count as inputs for removals to read as stale. */

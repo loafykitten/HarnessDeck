@@ -2,14 +2,14 @@
   import { app } from "../../stores/state.svelte";
   import { fmtAgo, fmtClock, fmtDate, fmtTokens, fmtUSD } from "../../utils/format";
   import { clampPct, remaining } from "./format";
-  import UsageRing from "./UsageRing.svelte";
+  import RingCell from "./RingCell.svelte";
+  import QuotaCell from "./QuotaCell.svelte";
   import BurnChart from "./BurnChart.svelte";
   import UpdateChip from "./UpdateChip.svelte";
   import PlanBadge from "./PlanBadge.svelte";
 
   const fivePct = $derived(clampPct(app.usage?.limits?.fiveHour?.pct));
   const weekPct = $derived(clampPct(app.usage?.limits?.weekly?.pct));
-  const modelPct = $derived(clampPct(app.usage?.limits?.weeklyModel?.pct));
 
   const fiveResets = $derived(app.usage?.limits?.fiveHour?.resetsAt ?? null);
   // Dead sign-in won't self-heal — distinct from ordinary staleness.
@@ -32,40 +32,21 @@
     </div>
   </div>
   <div class="hc-body">
-    <div class="hc-cell ring-card">
-      <UsageRing idp="cl" pct={fivePct}/>
-      <div class="ring-info">
-        <h3>5-hour block</h3>
-        <div class="big">Current window</div>
-        <div class="meta">
-          {#if authExpired}
-            <span class="stale">sign-in expired — run <code>claude</code> to reauthenticate</span>
-          {:else if stale}
-            <span class="stale">{app.usage?.limits?.fetchedAt
-              ? `data from ${fmtAgo(new Date(app.usage.limits.fetchedAt).getTime())} — reconnecting`
-              : "reconnecting…"}</span>
-          {:else}
-            Resets <em>{fmtClock(fiveResets)}</em><br>
-            {remaining(fiveResets)}
-          {/if}
-        </div>
-      </div>
-    </div>
+    <RingCell idp="cl" pct={fivePct} title="5-hour block">
+      {#if authExpired}
+        <span class="stale">sign-in expired — run <code>claude</code> to reauthenticate</span>
+      {:else if stale}
+        <span class="stale">{app.usage?.limits?.fetchedAt
+          ? `data from ${fmtAgo(new Date(app.usage.limits.fetchedAt).getTime())} — reconnecting`
+          : "reconnecting…"}</span>
+      {:else}
+        Resets <em>{fmtClock(fiveResets)}</em><br>
+        {remaining(fiveResets)}
+      {/if}
+    </RingCell>
 
-    <div class="hc-cell">
-      <h3>Weekly quota</h3>
-      <div class="card-sub">Rolling 7-day allowance</div>
-      <div class="bar-wrap">
-        <div class="bar-num">{weekPct ?? "–"}<span>%</span></div>
-        <div class="bar-label"><span>all models</span><b>{weekPct ?? "–"}%</b></div>
-        <div class="bar-frame"><div class="bar"><span class="bar-glow" style="width:{weekPct ?? 0}%"></span><i style="width:{weekPct ?? 0}%"></i></div></div>
-        {#if app.usage?.limits?.weeklyModel}
-          <div class="bar-label"><span>{app.usage.limits.weeklyModel.model}</span><b>{app.usage.limits.weeklyModel.pct}%</b></div>
-          <div class="bar-frame"><div class="bar sub"><span class="bar-glow alt" style="width:{modelPct ?? 0}%"></span><i class="alt" style="width:{modelPct ?? 0}%"></i></div></div>
-        {/if}
-        <div class="reset">Resets <b>{fmtClock(app.usage?.limits?.weekly?.resetsAt ?? null)}</b></div>
-      </div>
-    </div>
+    <QuotaCell label="all models" pct={weekPct} resetsAt={app.usage?.limits?.weekly?.resetsAt ?? null}
+      weeklyModel={app.usage?.limits?.weeklyModel} />
 
     <div class="hc-cell">
       <h3>{app.usage?.month?.since ? "This billing cycle" : "This month"}</h3>

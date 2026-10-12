@@ -1,16 +1,15 @@
 import { chime } from "../lib/sound";
 import { api } from "../lib/api";
-import type {
-  ChatClientMessage,
-  ChatEffort,
-  ChatEvent,
-  ChatFeedItem,
-  ChatInit,
-  ChatModel,
-  ChatPermissionMode,
-  ChatSession,
-  ChatStatus,
-  RequestOutcome,
+import {
+  usageTokens,
+  type ChatClientMessage,
+  type ChatEvent,
+  type ChatFeedItem,
+  type ChatInit,
+  type ChatOptions,
+  type ChatSession,
+  type ChatStatus,
+  type RequestOutcome,
 } from "../types/chat";
 
 const stores = new Map<string, ChatConnection>();
@@ -23,20 +22,13 @@ const REQUEST_OUTCOME_LABELS: Record<RequestOutcome, string> = {
   dismissed: "dismissed",
 };
 
-function usageTokens(usage: unknown): number {
-  if (!usage || typeof usage !== "object") return 0;
-  const values = usage as Record<string, unknown>;
-  return ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]
-    .reduce((total, key) => total + (typeof values[key] === "number" && Number.isFinite(values[key])
-      ? Math.max(0, values[key])
-      : 0), 0);
-}
-
 export type PendingChatImage = { path: string; previewUrl: string };
 
 export class ChatConnection {
   feed = $state<ChatFeedItem[]>([]);
-  session = $state<ChatSession | null>(null);
+  /** The project list's own entry for this chat, updated in place (never
+      replaced) so the session tabs show live status without a copy. */
+  readonly session: ChatSession;
   status = $state<ChatStatus>("idle");
   connected = $state(false);
   reconnecting = $state(false);
@@ -57,7 +49,12 @@ export class ChatConnection {
   private replayingInit = false;
   private inFlightStreams = new Map<string, Extract<ChatFeedItem, { type: "message" | "thinking" }>>();
 
-  constructor(readonly sessionId: string) {}
+  readonly sessionId: string;
+
+  constructor(session: ChatSession) {
+    this.session = $state(session);
+    this.sessionId = session.id;
+  }
 
   setActive(active: boolean): void {
     this.active = active;
@@ -129,10 +126,10 @@ export class ChatConnection {
 
   // Applied optimistically so the selects feel instant; the server echoes the
   // effective options back (an "options" event) and that is what sticks.
-  setOptions(options: { model?: ChatModel; effort?: ChatEffort; permissionMode?: ChatPermissionMode }): void {
-    if (options.permissionMode === "bypassPermissions" && !this.session?.canBypassPermissions) return;
+  setOptions(options: Partial<ChatOptions>): void {
+    if (options.permissionMode === "bypassPermissions" && !this.session.canBypassPermissions) return;
     if (!this.sendWs({ type: "set_options", ...options })) return;
-    if (this.session) Object.assign(this.session, options);
+    Object.assign(this.session, options);
   }
 
   interrupt(): void {
@@ -206,7 +203,7 @@ export class ChatConnection {
           this.inFlightStreams.clear();
         }
         this.epoch = message.epoch;
-        this.session = message.session;
+        Object.assign(this.session, message.session);
         this.replayingInit = true;
         try {
           for (const backlogEvent of message.backlog) this.apply(backlogEvent);
@@ -237,7 +234,7 @@ export class ChatConnection {
   private setStatus(status: ChatStatus): void {
     const previous = this.status;
     this.status = status;
-    if (this.session) this.session.status = status;
+    this.session.status = status;
     if (previous === "waiting" && status !== "waiting") {
       for (const item of this.feed) {
         if ((item.type === "permission" || item.type === "question") && !item.resolved) item.resolved = "dismissed";
@@ -323,31 +320,25 @@ export class ChatConnection {
         if (!item.resolved) item.resolved = REQUEST_OUTCOME_LABELS[event.outcome];
       }
     } else if (event.type === "options") {
-      if (this.session) {
-        this.session.model = event.model;
-        this.session.effort = event.effort;
-        this.session.permissionMode = event.permissionMode;
-      }
+      this.session.model = event.model;
+      this.session.effort = event.effort;
+      this.session.permissionMode = event.permissionMode;
     } else if (event.type === "status") {
       this.setStatus(event.status);
     } else if (event.type === "context") {
       // Live mid-turn occupancy so the meter stays current while working.
-      if (this.session) {
+      this.session.contextUsed = event.context.used;
+      if (event.context.window !== null) this.session.contextWindow = event.context.window;
+    } else if (event.type === "result") {
+      this.session.costUsd = event.costUsd;
+      if (!this.replayingInit && this.session.harness === "claude") {
+        this.session.totalTokens = usageTokens(event.usage);
+      }
+      // Skip during replay: live context events are not buffered, so the
+      // init snapshot is newer than any replayed result and must win.
+      if (event.context && !this.replayingInit) {
         this.session.contextUsed = event.context.used;
         if (event.context.window !== null) this.session.contextWindow = event.context.window;
-      }
-    } else if (event.type === "result") {
-      if (this.session) {
-        this.session.costUsd = event.costUsd;
-        if (!this.replayingInit && this.session.harness === "claude") {
-          this.session.totalTokens = usageTokens(event.usage);
-        }
-        // Skip during replay: live context events are not buffered, so the
-        // init snapshot is newer than any replayed result and must win.
-        if (event.context && !this.replayingInit) {
-          this.session.contextUsed = event.context.used;
-          if (event.context.window !== null) this.session.contextWindow = event.context.window;
-        }
       }
     } else if (event.type === "error") {
       this.feed.push({ id, type: "error", message: event.message });
@@ -355,11 +346,13 @@ export class ChatConnection {
   }
 }
 
-export function getChatStore(sessionId: string): ChatConnection {
-  let store = stores.get(sessionId);
+/** `session` must be the project list's reactive entry: the connection
+    adopts that object as its own session state. */
+export function getChatStore(session: ChatSession): ChatConnection {
+  let store = stores.get(session.id);
   if (!store) {
-    store = new ChatConnection(sessionId);
-    stores.set(sessionId, store);
+    store = new ChatConnection(session);
+    stores.set(session.id, store);
   }
   return store;
 }

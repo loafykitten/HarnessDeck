@@ -1,10 +1,12 @@
-import { mkdir, readdir } from "node:fs/promises";
-import { homedir } from "node:os";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { claudeTranscriptDir, codexRolloutFiles } from "../paths";
+import { imageExtension } from "../pastes";
 import { contentText } from "./claude";
-import { CHAT_PASTE_DIR, chatImageExtension, MAX_CHAT_IMAGE_BYTES } from "./images";
+import { CHAT_PASTE_DIR, MAX_CHAT_IMAGE_BYTES } from "./images";
 import type { ChatHarness, DriverEvent } from "./driver";
+import { usageTokens } from "../../shared/chat";
 
 /* Rebuilds a session's visible history from the harness's own on-disk record —
    the Claude project transcript or the Codex rollout file — after a server
@@ -22,15 +24,6 @@ export function rehydrateHistory(
   sdkSessionId: string,
 ): Promise<RehydratedHistory | null> {
   return harness === "claude" ? rehydrateClaude(cwd, sdkSessionId) : rehydrateCodex(sdkSessionId);
-}
-
-export function usageTokens(usage: unknown): number {
-  if (!usage || typeof usage !== "object") return 0;
-  const values = usage as Record<string, unknown>;
-  return ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]
-    .reduce((total, key) => total + (typeof values[key] === "number" && Number.isFinite(values[key])
-      ? Math.max(0, values[key])
-      : 0), 0);
 }
 
 function* jsonLines(raw: string): Generator<Record<string, unknown>> {
@@ -80,7 +73,7 @@ const isSyntheticUserText = (text: string): boolean =>
  * refreshes the mtime, so retention restarts with each rehydrate).
  */
 async function materializeImage(mediaType: string, data: string): Promise<string | null> {
-  const extension = chatImageExtension(mediaType);
+  const extension = imageExtension(mediaType);
   if (!extension) return null;
   const bytes = Buffer.from(data, "base64");
   if (!bytes.length || bytes.length > MAX_CHAT_IMAGE_BYTES) return null;
@@ -95,7 +88,7 @@ async function materializeImage(mediaType: string, data: string): Promise<string
 }
 
 const claudeTranscriptPath = (cwd: string, sessionId: string): string =>
-  join(homedir(), ".claude", "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"), `${sessionId}.jsonl`);
+  join(claudeTranscriptDir(cwd), `${sessionId}.jsonl`);
 
 async function rehydrateClaude(cwd: string, sessionId: string): Promise<RehydratedHistory | null> {
   const raw = await readCapped(claudeTranscriptPath(cwd, sessionId));
@@ -174,26 +167,13 @@ async function rehydrateClaude(cwd: string, sessionId: string): Promise<Rehydrat
   return { events, totalTokens };
 }
 
-const CODEX_SESSIONS_DIR = join(homedir(), ".codex", "sessions");
-
-/** sessions/<yyyy>/<mm>/<dd>/rollout-<ts>-<threadId>.jsonl; resumed threads
-    append to the same file, so the newest match wins. */
+/** Resumed threads append to the same rollout file, so the newest match wins. */
 async function findRolloutFile(threadId: string): Promise<string | null> {
   const suffix = `-${threadId}.jsonl`;
-  const matches: { name: string; path: string }[] = [];
-  for (const year of await readdir(CODEX_SESSIONS_DIR).catch(() => [] as string[])) {
-    for (const month of await readdir(join(CODEX_SESSIONS_DIR, year)).catch(() => [] as string[])) {
-      const dayDir = join(CODEX_SESSIONS_DIR, year, month);
-      for (const day of await readdir(dayDir).catch(() => [] as string[])) {
-        const files = await readdir(join(dayDir, day)).catch(() => [] as string[]);
-        for (const name of files) {
-          if (name.endsWith(suffix)) matches.push({ name, path: join(dayDir, day, name) });
-        }
-      }
-    }
+  for await (const file of codexRolloutFiles()) {
+    if (file.endsWith(suffix)) return file;
   }
-  matches.sort((a, b) => a.name.localeCompare(b.name));
-  return matches.at(-1)?.path ?? null;
+  return null;
 }
 
 const codexToolName = (name: unknown): string => {

@@ -1,24 +1,28 @@
-import { homedir } from "node:os";
-import { join, dirname } from "node:path";
-import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { getAppConfig } from "../config/config";
+import { ttlCache } from "../cache";
+import { CLAUDE_HOME, LEGACY_STATE_DIR, STATE_DIR } from "../paths";
+import { run } from "../proc";
+import { readJson, serialQueue, writeJsonAtomic } from "../store";
 
-const CREDS_PATH = join(homedir(), ".claude", ".credentials.json");
-const DISK_CACHE = join(homedir(), ".config", "harnessdeck", "usage-cache.json");
-// pre-rename location (Claude Command era) — read-only fallback
-const LEGACY_DISK_CACHE = join(homedir(), ".config", "claude-command", "usage-cache.json");
+const CREDS_PATH = join(CLAUDE_HOME, ".credentials.json");
+const DISK_CACHE = join(STATE_DIR, "usage-cache.json");
 
 /** Last-good API responses survive restarts: the server restarts often
     (KeepAlive, updates) and the OAuth endpoints 429 when hit cold each time. */
 async function diskCache(): Promise<Record<string, unknown>> {
-  try { return await Bun.file(DISK_CACHE).json(); } catch { /* fall through */ }
-  try { return await Bun.file(LEGACY_DISK_CACHE).json(); } catch { return {}; }
+  const all = await readJson(DISK_CACHE, join(LEGACY_STATE_DIR, "usage-cache.json"));
+  return all && typeof all === "object" ? all as Record<string, unknown> : {};
 }
-async function saveDiskCache(key: string, value: unknown): Promise<void> {
-  const all = await diskCache();
-  all[key] = value;
-  await mkdir(dirname(DISK_CACHE), { recursive: true });
-  await Bun.write(DISK_CACHE, JSON.stringify(all));
+// Profile and limits saves land back-to-back; unserialized, the second
+// read-modify-write would drop the first one's key.
+const diskWrites = serialQueue();
+function saveDiskCache(key: string, value: unknown): Promise<void> {
+  return diskWrites(async () => {
+    const all = await diskCache();
+    all[key] = value;
+    await writeJsonAtomic(DISK_CACHE, all);
+  });
 }
 
 export interface Limits {
@@ -32,9 +36,11 @@ export interface Limits {
   authExpired?: boolean; // no valid token in either store — needs `claude` re-login
 }
 
-interface Cache<T> { at: number; data: T | null }
-const limitsCache: Cache<Limits> = { at: 0, data: null };
-let limitsInFlight: Promise<Limits> | null = null;
+/** The last successful fetch, kept apart from the TTL cache: cache-fallback
+    copies flow through that cache too, but are never fresh and never become
+    the source for the next fallback. */
+let lastGoodLimits: Limits | null = null;
+const limitsCache = ttlCache(60_000, computeLimitsRaw, { isFresh: limits => !limits.stale });
 
 /** OAuth creds live in two stores that can disagree: the Keychain entry
     Claude Code maintains, and ~/.claude/.credentials.json used over ssh.
@@ -59,15 +65,9 @@ async function fileCreds(): Promise<OAuthCreds | null> {
 /** Keychain read degrades to null off macOS or when the entry is absent. */
 async function keychainCreds(): Promise<OAuthCreds | null> {
   if (process.platform !== "darwin") return null;
-  try {
-    const p = Bun.spawn(
-      ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
-      { stdout: "pipe", stderr: "ignore" },
-    );
-    const out = await new Response(p.stdout).text();
-    if ((await p.exited) !== 0) return null;
-    return parseCreds(JSON.parse(out.trim()));
-  } catch { return null; }
+  const res = await run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"]);
+  if (!res.ok) return null;
+  try { return parseCreds(JSON.parse(res.out.trim())); } catch { return null; }
 }
 
 async function loadFreshestCreds(force = false): Promise<{ creds: OAuthCreds | null; fromCache: boolean }> {
@@ -125,7 +125,7 @@ export interface Profile {
   displayName: string | null;
 }
 
-const profileCache: Cache<Profile> = { at: 0, data: null };
+const profileCache: { at: number; data: Profile | null } = { at: 0, data: null };
 
 /** Next monthly anniversary of the subscription start date. Assumes monthly
     billing (annual plans will show the monthly anniversary instead). */
@@ -154,7 +154,7 @@ function renewalFromDay(day: number, direction: "next" | "prev"): Date {
 }
 
 export function invalidateClaudeMonthCache() {
-  monthCache.at = 0;
+  monthCache.invalidate();
 }
 
 /** The credentials file's subscriptionType goes stale after plan changes —
@@ -196,7 +196,7 @@ export async function getProfile(): Promise<Profile> {
     time — never baked into the cache, where they'd go stale (learned the
     hard way when a cached renewsAt outlived a renewalDay change). */
 export async function getLimits(): Promise<Limits> {
-  const base = await getLimitsRaw();
+  const base = await limitsCache.get();
   const cfg = await getAppConfig();
   if (!cfg.renewalDay) return base;
   return {
@@ -225,12 +225,13 @@ function scheduleBackoff(retryAfterMs: number | null) {
 }
 
 /** Cache-fallback copy of the limits, flagged so the UI and /api/usage can
-    say the data is old. Warms memory from disk but leaves the cache timestamp
-    untouched, so we keep re-evaluating rather than treating disk data as live. */
+    say the data is old. Warms memory from disk; the stale flag keeps the TTL
+    cache from serving the copy, so we keep re-evaluating rather than treating
+    old data as live. */
 async function staleLimits(reason: string, authExpired = false): Promise<Limits | null> {
-  const src = limitsCache.data ?? ((await diskCache()).limits as Limits | undefined) ?? null;
+  const src = lastGoodLimits ?? ((await diskCache()).limits as Limits | undefined) ?? null;
   if (!src) return null;
-  if (!limitsCache.data) limitsCache.data = src;
+  lastGoodLimits = src;
   return { ...src, stale: true, staleReason: reason, ...(authExpired ? { authExpired: true } : {}) };
 }
 
@@ -242,21 +243,11 @@ function authExpiredLimits(): Limits {
     weekly: { pct: null, resetsAt: null },
     weeklyModel: null,
     plan: { label: "Claude", renewsAt: null },
-    fetchedAt: limitsCache.data?.fetchedAt ?? new Date().toISOString(),
+    fetchedAt: lastGoodLimits?.fetchedAt ?? new Date().toISOString(),
     stale: true,
     staleReason: "sign-in expired",
     authExpired: true,
   };
-}
-
-async function getLimitsRaw(): Promise<Limits> {
-  if (limitsCache.data && !limitsCache.data.stale && Date.now() - limitsCache.at < 60_000) return limitsCache.data;
-  if (limitsInFlight) return limitsInFlight;
-  const pending = computeLimitsRaw();
-  limitsInFlight = pending;
-  const clear = () => { if (limitsInFlight === pending) limitsInFlight = null; };
-  pending.then(clear, clear);
-  return pending;
 }
 
 async function computeLimitsRaw(): Promise<Limits> {
@@ -305,8 +296,7 @@ async function computeLimitsRaw(): Promise<Limits> {
     plan: { label: profile.planLabel, renewsAt: profile.renewsAt },
     fetchedAt: new Date().toISOString(),
   };
-  limitsCache.at = Date.now();
-  limitsCache.data = data;
+  lastGoodLimits = data;
   saveDiskCache("limits", data).catch(() => {});
   return data;
 }
@@ -320,8 +310,8 @@ export interface MonthUsage {
   days: { date: string; tokens: number; costUSD: number }[]; // zero-filled, window start → today
 }
 
-const monthCache: Cache<MonthUsage> = { at: 0, data: null };
-let monthInFlight: Promise<MonthUsage> | null = null;
+// 60s: short enough that the dashboard visibly ticks while sessions run
+const monthCache = ttlCache(60_000, computeMonth, { staleOnError: true });
 
 /** Sum Claude-model tokens/cost from a list of ccusage entries. */
 function sumClaudeModels(entries: any[]) {
@@ -369,21 +359,11 @@ export async function ccusageJson(args: string[]): Promise<any> {
   }
 }
 
-const localYmd = (d: Date) =>
+export const localYmd = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-export async function getMonth(): Promise<MonthUsage> {
-  // 60s: short enough that the dashboard visibly ticks while sessions run
-  if (monthCache.data && Date.now() - monthCache.at < 60_000) return monthCache.data;
-  if (monthInFlight) return monthInFlight;
-  const pending = computeMonth().catch(e => {
-    if (monthCache.data) return monthCache.data; // serve stale over failing
-    throw e;
-  });
-  monthInFlight = pending;
-  const clear = () => { if (monthInFlight === pending) monthInFlight = null; };
-  pending.then(clear, clear);
-  return pending;
+export function getMonth(): Promise<MonthUsage> {
+  return monthCache.get();
 }
 
 async function computeMonth(): Promise<MonthUsage> {
@@ -417,7 +397,5 @@ async function computeMonth(): Promise<MonthUsage> {
     models,
     days,
   };
-  monthCache.at = Date.now();
-  monthCache.data = data;
   return data;
 }

@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
-import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { DEV_DIR, STATE_DIR } from "../paths";
+import { isProjectName, resolveProjectDir } from "../projects/resolve";
+import { serialQueue, writeJsonAtomic } from "../store";
 import { claudeChatDriver } from "./claude";
 import { codexChatDriver } from "./codex";
-import { rehydrateHistory, usageTokens } from "./history";
+import { rehydrateHistory } from "./history";
+import { usageTokens } from "../../shared/chat";
 import { validateChatImagePaths } from "./images";
 import {
   chatWorktreeGit,
@@ -25,11 +28,10 @@ import type {
   PermissionResponse,
   QuestionResponse,
 } from "./driver";
+import type { ChatEvent, ChatInit, ChatSession } from "../../shared/chat";
 
-const DEV_DIR = join(homedir(), "Developer");
-const STORE_DIR = join(homedir(), ".config", "harnessdeck");
 const PORT = Number(process.env.PORT) || 4553;
-const STORE_PATH = join(STORE_DIR, PORT === 4553 ? "chat-sessions.json" : `chat-sessions-${PORT}.json`);
+const STORE_PATH = join(STATE_DIR, PORT === 4553 ? "chat-sessions.json" : `chat-sessions-${PORT}.json`);
 const MAX_EVENTS = 500;
 /** Changes on every server start. Rehydrated feeds restart their seqs, so a
     client must not merge a new epoch's backlog into a feed it built earlier. */
@@ -37,40 +39,14 @@ const EPOCH = randomUUID();
 
 /** What the registry itself broadcasts, alongside driver events: the
     session's effective options after a set_options, so a client that applied
-    a change optimistically snaps back when the harness rejected it. */
-type SessionEvent =
-  | DriverEvent
-  | { type: "options"; model: ChatModel; effort: ChatEffort; permissionMode: ChatPermissionMode };
-
-export type ChatEvent = SessionEvent & { seq: number };
+    a change optimistically snaps back when the harness rejected it. emit()
+    stamps the seq that turns one into a ChatEvent. */
+type SessionEvent = DriverEvent | ({ type: "options" } & ChatOptions);
 
 const DRIVERS = {
   claude: claudeChatDriver,
   codex: codexChatDriver,
 } satisfies Record<ChatHarness, typeof claudeChatDriver>;
-
-export interface ChatSession {
-  id: string;
-  project: string;
-  name: string;
-  harness: ChatHarness;
-  model: ChatModel;
-  effort: ChatEffort;
-  permissionMode: ChatPermissionMode;
-  canBypassPermissions: boolean;
-  /** Project-relative worktree path (".worktrees/worktree-…") when the chat is
-      isolated; null runs in the project root. */
-  worktree: string | null;
-  sdkSessionId: string | null;
-  status: ChatStatus;
-  costUsd: number;
-  totalTokens: number;
-  /** Context occupancy of the latest turn; persisted so it survives restarts. */
-  contextUsed?: number;
-  contextWindow?: number | null;
-  created: number;
-  lastActivity: number;
-}
 
 type SessionGit = {
   /** Resolved at creation; null for a chat without a worktree, or when the
@@ -88,7 +64,7 @@ type InternalSession = ChatSession & SessionGit & {
 const sessions = new Map<string, InternalSession>();
 let loaded = false;
 let loadPromise: Promise<void> | null = null;
-let persistChain = Promise.resolve();
+const persistQueue = serialQueue();
 
 const view = (session: InternalSession): ChatSession => ({
   id: session.id,
@@ -184,19 +160,17 @@ async function rehydrate(session: InternalSession): Promise<void> {
   }
 }
 
+/** Never rejects: a failed write is logged, and the next persist rewrites
+    the whole registry anyway. */
 function persist(): Promise<void> {
-  persistChain = persistChain.then(async () => {
-    await mkdir(STORE_DIR, { recursive: true });
-    const tmp = `${STORE_PATH}.tmp-${process.pid}`;
+  return persistQueue(async () => {
     const data: StoredSession[] = [...sessions.values()].map(session => ({
       ...view(session),
       worktreeGit: session.worktreeGit,
       seq: session.seq,
     }));
-    await writeFile(tmp, JSON.stringify(data, null, 2) + "\n");
-    await rename(tmp, STORE_PATH);
+    await writeJsonAtomic(STORE_PATH, data, 2);
   }).catch(error => console.error("persist chat sessions", error));
-  return persistChain;
 }
 
 function emit(session: InternalSession, event: SessionEvent): void {
@@ -267,17 +241,9 @@ export async function createChatSession(input: {
   worktree: boolean;
 }): Promise<ChatSession> {
   await loadSessions();
-  if (!input.project || input.project === "." || input.project === ".." || input.project !== basename(input.project)) {
-    throw new Error("invalid project");
-  }
-  const projectDir = join(DEV_DIR, input.project);
-  const resolvedProjectDir = await realpath(projectDir).catch(() => null);
-  const resolvedDevDir = await realpath(DEV_DIR).catch(() => null);
-  if (!resolvedProjectDir || !resolvedDevDir || dirname(resolvedProjectDir) !== resolvedDevDir) {
-    throw new Error("invalid project");
-  }
-  const info = await stat(resolvedProjectDir).catch(() => null);
-  if (!info?.isDirectory()) throw new Error(`no such project: ${input.project}`);
+  if (!isProjectName(input.project)) throw new Error("invalid project");
+  const resolvedProjectDir = await resolveProjectDir(input.project);
+  if (!resolvedProjectDir) throw new Error(`no such project: ${input.project}`);
   const worktree = input.worktree ? await createChatWorktree(resolvedProjectDir, input.name) : null;
   const worktreeGit = worktree ? await chatWorktreeGit(resolvedProjectDir, join(resolvedProjectDir, worktree)) : null;
   if (worktree && !worktreeGit) console.error(`chat worktree: could not resolve git dirs for ${input.project}/${worktree}`);
@@ -309,12 +275,7 @@ export async function hasChatSession(id: string): Promise<boolean> {
   return sessions.has(id);
 }
 
-export function chatInit(id: string): {
-  session: ChatSession;
-  backlog: ChatEvent[];
-  seq: number;
-  epoch: string;
-} | null {
+export function chatInit(id: string): Omit<ChatInit, "type"> | null {
   const session = sessions.get(id);
   if (!session) return null;
   return { session: view(session), backlog: [...session.events], seq: session.seq, epoch: EPOCH };

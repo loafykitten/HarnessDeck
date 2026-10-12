@@ -33,8 +33,11 @@
   import {
     CHAT_EFFORTS,
     CHAT_MODELS,
+    CHAT_PERMISSION_MODES,
+    PERMISSION_MODE_LABELS,
     type ChatEffort,
     type ChatModel,
+    type ChatOptions,
     type ChatPermissionMode,
     type ChatSession,
     type ChatStatus,
@@ -49,7 +52,7 @@
   }: {
     project: string;
     draft: ChatDraft;
-    session: ChatSession | null;
+    session: ChatSession;
     status: ChatStatus;
     connected: boolean;
     attachments: PendingChatImage[];
@@ -58,12 +61,9 @@
     attachImage: (blob: Blob) => Promise<void>;
     removeAttachment: (path: string) => void;
     send: (text: string) => boolean;
-    setOptions: (options: { model?: ChatModel; effort?: ChatEffort; permissionMode?: ChatPermissionMode }) => void;
+    setOptions: (options: Partial<ChatOptions>) => void;
     interrupt: () => void;
   } = $props();
-  let model = $state<ChatModel>("default");
-  let effort = $state<ChatEffort>("high");
-  let permissionMode = $state<ChatPermissionMode>("default");
   let textarea: HTMLTextAreaElement;
   let mentionStart = $state<number | null>(null);
   let mentionCaret = $state(0);
@@ -74,19 +74,18 @@
   let fileRequest = 0;
   let filesFailedAt = 0;
   const FILE_RETRY_MS = 5_000;
-  const canSend = $derived(connected && session !== null);
   // Context meter: only render once the harness has reported a window size.
   const ctxPct = $derived.by(() => {
-    const used = session?.contextUsed;
-    const window = session?.contextWindow;
+    const used = session.contextUsed;
+    const window = session.contextWindow;
     if (used === undefined || !window) return null;
     return Math.min(100, Math.round((used / window) * 100));
   });
-  const ctxFree = $derived(Math.max(0, (session?.contextWindow ?? 0) - (session?.contextUsed ?? 0)));
-  const canSubmit = $derived(canSend && uploadingImages === 0 && (draft.text.trim().length > 0 || attachments.length > 0));
-  const idlePlaceholder = $derived(session?.harness === "codex" ? "Message Codex…" : "Message Claude…");
+  const ctxFree = $derived(Math.max(0, (session.contextWindow ?? 0) - (session.contextUsed ?? 0)));
+  const canSubmit = $derived(connected && uploadingImages === 0 && (draft.text.trim().length > 0 || attachments.length > 0));
+  const idlePlaceholder = $derived(session.harness === "codex" ? "Message Codex…" : "Message Claude…");
   const mentionOpen = $derived(mentionStart !== null);
-  const popupId = $derived(`file-mention-options-${session?.id ?? project}`);
+  const popupId = $derived(`file-mention-options-${session.id}`);
   const mentionQuery = $derived(mentionStart === null ? "" : draft.text.slice(mentionStart + 1, mentionCaret));
   const matches = $derived.by(() => {
     const query = mentionQuery.toLowerCase();
@@ -96,13 +95,6 @@
       .sort((a, b) => a.score - b.score || a.path.localeCompare(b.path))
       .slice(0, 10)
       .map(match => match.path);
-  });
-
-  $effect(() => {
-    if (!session) return;
-    model = session.model;
-    effort = session.effort;
-    permissionMode = session.permissionMode;
   });
 
   function submit(): void {
@@ -293,25 +285,30 @@
       onkeyup={(event) => { if (!["ArrowUp", "ArrowDown", "Enter", "Tab", "Escape"].includes(event.key)) updateMention(event.currentTarget); }}
       aria-autocomplete="list" aria-controls={mentionOpen ? popupId : undefined}
       aria-activedescendant={mentionOpen && matches[selectedIndex] ? `${popupId}-${selectedIndex}` : undefined}
-      disabled={!canSend}></textarea>
+      disabled={!connected}></textarea>
   </div>
   {#if uploadingImages}<div class="attachment-notice">Attaching {uploadingImages === 1 ? "image" : `${uploadingImages} images`}…</div>{/if}
   {#if attachmentError}<div class="attachment-notice error">{attachmentError}</div>{/if}
   <div class="composer-row">
     <div class="composer-options">
-      <label>model<select bind:value={model} disabled={!connected} onchange={() => setOptions({ model })}>
-        {#each CHAT_MODELS[session?.harness ?? "claude"] as choice}<option value={choice}>{choice}</option>{/each}
+      <!-- Bound one-way to the session: setOptions applies the pick
+           optimistically and the server's options echo has the last word. -->
+      <label>model<select value={session.model} disabled={!connected}
+        onchange={(event) => setOptions({ model: event.currentTarget.value as ChatModel })}>
+        {#each CHAT_MODELS[session.harness] as choice}<option value={choice}>{choice}</option>{/each}
       </select></label>
-      <label>effort<select bind:value={effort} disabled={!connected} onchange={() => setOptions({ effort })}>
-        {#each CHAT_EFFORTS[session?.harness ?? "claude"] as choice}<option value={choice}>{choice}</option>{/each}
+      <label>effort<select value={session.effort} disabled={!connected}
+        onchange={(event) => setOptions({ effort: event.currentTarget.value as ChatEffort })}>
+        {#each CHAT_EFFORTS[session.harness] as choice}<option value={choice}>{choice}</option>{/each}
       </select></label>
-      <label>mode<select bind:value={permissionMode} disabled={!connected} onchange={() => setOptions({ permissionMode })}>
-        <option value="default">default</option><option value="plan">plan</option><option value="acceptEdits">accept edits</option><option value="bypassPermissions" disabled={!session?.canBypassPermissions}>skip approvals</option>
+      <label>mode<select value={session.permissionMode} disabled={!connected}
+        onchange={(event) => setOptions({ permissionMode: event.currentTarget.value as ChatPermissionMode })}>
+        {#each CHAT_PERMISSION_MODES as choice}<option value={choice} disabled={choice === "bypassPermissions" && !session.canBypassPermissions}>{PERMISSION_MODE_LABELS[choice]}</option>{/each}
       </select></label>
     </div>
     {#if ctxPct !== null}
       <div class="ctx-meter" class:warn={ctxPct >= 70} class:crit={ctxPct >= 90}
-        title="{fmtTokens(session?.contextUsed ?? 0)} used · {fmtTokens(ctxFree)} free of {fmtTokens(session?.contextWindow ?? 0)}">
+        title="{fmtTokens(session.contextUsed ?? 0)} used · {fmtTokens(ctxFree)} free of {fmtTokens(session.contextWindow ?? 0)}">
         <span>ctx</span><i><b style:width="{ctxPct}%"></b></i><em>{ctxPct}%</em>
       </div>
     {/if}

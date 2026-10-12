@@ -7,22 +7,21 @@
   import ChatHeader from "./ChatHeader.svelte";
   import Composer from "./Composer.svelte";
 
-  let { project, sessionId, active, branch, onSession }: {
-    project: string; sessionId: string; active: boolean; branch?: string; onSession?: (session: ChatSession) => void;
+  let { project, session, active, branch }: {
+    project: string; session: ChatSession; active: boolean; branch?: string;
   } = $props();
-  const chat = getChatStore(untrack(() => sessionId));
-  const draft = getChatDraft(untrack(() => sessionId));
+  const chat = getChatStore(untrack(() => session));
+  const draft = getChatDraft(chat.sessionId);
   /** When drilled into a subagent, the composer yields its space to the view. */
   let viewingAgent = $state<string | null>(null);
 
   $effect(() => chat.setActive(active));
-  $effect(() => { if (chat.session) onSession?.({ ...chat.session }); });
   onMount(() => () => chat.setActive(false));
 </script>
 
 <section class="chat-pane" class:active>
   <ChatHeader session={chat.session} {branch} connected={chat.connected} reconnecting={chat.reconnecting} />
-  <ChatFeed feed={chat.feed} harness={chat.session?.harness ?? "claude"} bind:viewing={viewingAgent}
+  <ChatFeed feed={chat.feed} harness={chat.session.harness} bind:viewing={viewingAgent}
     permission={(id, behavior, always, message) => chat.respondPermission(id, behavior, always, message)}
     question={(id, answers) => chat.respondQuestion(id, answers)} />
   {#if !viewingAgent}

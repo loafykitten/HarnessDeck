@@ -1,7 +1,11 @@
 import { api } from "../lib/api";
 import type { Greeting, HarnessId, HarnessMeta, News, ProjectInfo, ServerStatus, SessionInfo, Updates, Usage } from "../types/api";
+import type { ChatSession } from "../types/chat";
 import { petOrDefault, type PetId } from "../components/pets/pets";
 import { chime } from "../lib/sound";
+import { cycle } from "../utils/cycle";
+import { getRenamedItem } from "../utils/storage";
+import { getChatSessionsStore, projectMode } from "./chatSessions.svelte";
 
 /** Fallback until GET /api/harnesses answers, so pickers render immediately. */
 const DEFAULT_HARNESSES: HarnessMeta[] = [
@@ -25,7 +29,7 @@ export const app = $state({
   // finished-update chips retire at these times, per harness
   jobDisplayUntil: { claude: null, codex: null } as Record<HarnessId, number | null>,
   railExpanded: false,
-  lastProject: localStorage.getItem("cc-last-project"),
+  lastProject: getRenamedItem("hd-last-project", "cc-last-project"),
   pet: "biblical" as PetId,
   // usage freshness for the dashboard's status line: when the numbers were
   // last fetched, whether a fetch is running, and when the next one is due
@@ -78,7 +82,7 @@ function parseRoute(hash: string): Route {
 function rememberProject(route: Route) {
   if (route.view === "project") {
     app.lastProject = route.name;
-    localStorage.setItem("cc-last-project", route.name);
+    localStorage.setItem("hd-last-project", route.name);
   }
 }
 
@@ -117,9 +121,9 @@ const THEMES = ["", "crimson", "aero"];
 export function toggleTheme() {
   const r = document.documentElement;
   const cur = r.getAttribute("data-theme") ?? "";
-  const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+  const next = cycle(THEMES, cur, 1);
   r.setAttribute("data-theme", next);
-  localStorage.setItem("cc-theme", next);
+  localStorage.setItem("hd-theme", next);
 }
 
 /** A project's sessions in stable tab order: creation time, not activity.
@@ -131,15 +135,35 @@ export function projectSessions(project: string): SessionInfo[] {
     .sort((a, b) => a.created - b.created || a.id.localeCompare(b.id));
 }
 
+export type ProjectWorkspace =
+  | { mode: "terminal"; sessions: SessionInfo[]; activeId: string | null }
+  | { mode: "chat"; sessions: ChatSession[]; activeId: string | null };
+
+/** What a project's workspace shows: terminal or chat mode, that mode's tabs
+    in order, and the open tab. A route session in either list wins the mode
+    (so deep links and hotkeys land in the right place); the sticky per-project
+    mode is only the fallback. An absent or unknown route session → first tab.
+    A $derived caller must create the project's chat store first (see
+    ProjectView): a derived doesn't track state it creates itself. */
+export function projectWorkspace(project: string): ProjectWorkspace {
+  const route = app.route.view === "project" && app.route.name === project ? app.route.session : undefined;
+  const terminals = projectSessions(project);
+  const chats = getChatSessionsStore(project).sessions;
+  const mode = route && terminals.some(s => s.id === route) ? "terminal"
+    : route && chats.some(s => s.id === route) ? "chat"
+    : projectMode(project);
+  const ids = (mode === "chat" ? chats : terminals).map(s => s.id);
+  const activeId = route && ids.includes(route) ? route : ids[0] ?? null;
+  return mode === "chat" ? { mode, sessions: chats, activeId } : { mode, sessions: terminals, activeId };
+}
+
 /** Is this session's terminal on screen right now? (No chime for what
     the user is already watching.) */
 function isOnScreen(s: SessionInfo): boolean {
   if (document.hidden) return false;
-  const r = app.route;
-  if (r.view !== "project" || r.name !== s.project) return false;
-  const mine = projectSessions(s.project);
-  const activeId = r.session && mine.some(x => x.id === r.session) ? r.session : mine[0]?.id;
-  return activeId === s.id;
+  if (app.route.view !== "project" || app.route.name !== s.project) return false;
+  const workspace = projectWorkspace(s.project);
+  return workspace.mode === "terminal" && workspace.activeId === s.id;
 }
 
 let coreInFlight = false;

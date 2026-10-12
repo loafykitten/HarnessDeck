@@ -1,14 +1,14 @@
+import { appendFileSync } from "node:fs";
 import { spawn as ptySpawn, type IPty } from "bun-pty";
 import type { WebSocketHandler } from "bun";
 import { newlineIntoSession } from "./sessions";
+
+const WS_DEBUG_LOG = process.env.HARNESSDECK_WS_DEBUG === "1" ? "/tmp/harnessdeck-ws-debug.log" : null;
 
 export type WsData = { sessionId: string; pty?: IPty };
 
 /** Attach a browser terminal to a tmux session over a pty. */
 export const terminalWebsocket: WebSocketHandler<WsData> = {
-  // default is 120s — background tabs go quiet longer than that; client
-  // also pings every 30s as belt-and-suspenders
-  idleTimeout: 960,
   open(ws) {
     const pty = ptySpawn("tmux", ["attach", "-t", `=${ws.data.sessionId}`], {
       name: "xterm-256color",
@@ -28,9 +28,7 @@ export const terminalWebsocket: WebSocketHandler<WsData> = {
     const pty = ws.data.pty;
     if (!pty) return;
     if (typeof msg === "string") {
-      if (process.env.CC_WS_DEBUG) {
-        require("node:fs").appendFileSync("/tmp/cc-ws-debug.log", JSON.stringify(msg) + "\n");
-      }
+      if (WS_DEBUG_LOG) appendFileSync(WS_DEBUG_LOG, JSON.stringify(msg) + "\n");
       let m: any = null;
       try { m = JSON.parse(msg); } catch { /* raw input */ }
       if (m && typeof m === "object") {

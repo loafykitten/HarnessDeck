@@ -1,7 +1,8 @@
 import { lstat, mkdir, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { INSTALL_DIR, parseFrontmatter, run, sanitizeName } from "./skills";
+import { run } from "../proc";
+import { INSTALL_DIR, parseFrontmatter, sanitizeName } from "./skills";
 
 const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
@@ -33,6 +34,7 @@ async function downloadCapped(res: Response, dest: string): Promise<boolean> {
     archive claims, so extractCapped enforces the budget on real bytes. */
 async function zipWithinLimits(zipPath: string): Promise<boolean> {
   const info = await run(["zipinfo", "-t", zipPath], { timeoutMs: 30_000 });
+  if (info.code === null) throw new Error(info.err); // not "too large" — zipinfo never ran
   const m = info.out.match(/(\d+) files?, (\d+) bytes uncompressed/);
   return !!m && Number(m[1]) <= MAX_ZIP_ENTRIES && Number(m[2]) <= MAX_UNZIPPED_BYTES;
 }
@@ -112,7 +114,7 @@ async function stripEscapingLinks(skillDir: string): Promise<void> {
 export async function installFromUrl(url: string):
   Promise<{ installed: string[]; skipped: string[] } | { error: string }> {
   if (!/^https?:\/\//.test(url)) return { error: "only http(s) URLs are supported" };
-  const tmp = join(tmpdir(), `cc-skill-${Date.now()}`);
+  const tmp = join(tmpdir(), `hd-skill-${Date.now()}`);
   await mkdir(tmp, { recursive: true });
   try {
     let root = tmp;
@@ -177,8 +179,10 @@ export async function installFromUrl(url: string):
         await rm(join(f.dir, ".git"), { recursive: true, force: true });
         await stripEscapingLinks(f.dir);
         await rename(f.dir, dest).catch(async () => {
-          // cross-device fallback
-          await run(["cp", "-R", f.dir, dest]);
+          // cross-device fallback; the finally below deletes the source, so a
+          // failed copy must not be reported as installed
+          const copy = await run(["cp", "-R", f.dir, dest]);
+          if (!copy.ok) throw new Error(`copy failed: ${copy.err.trim() || `exit ${copy.code}`}`);
         });
         installed.push(f.name);
       }
