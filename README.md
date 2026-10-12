@@ -62,7 +62,7 @@ bun run build   # builds the web frontend
 bun start       # serves on http://localhost:4553
 ```
 
-For run-at-login, install a launchd LaunchAgent pointing at `bun server/index.ts` (this repo uses `com.fenn.harness-deck` with `RunAtLoad` + `KeepAlive`).
+For run-at-login, install a launchd LaunchAgent pointing at `bun server/index.ts` (this repo uses `com.caffeineplz.harness-deck` with `RunAtLoad` + `KeepAlive`).
 
 ## A note on security
 

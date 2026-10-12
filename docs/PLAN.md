@@ -88,7 +88,7 @@ is self-evident.
 | PTY bridge | `bun-pty` (portable-pty via FFI) | node-pty is unreliable under Bun. Fallback if flaky: tiny Node sidecar for PTY only. |
 | Usage data | `bunx ccusage --json` (blocks/weekly/monthly) | Parses `~/.claude/projects/**/*.jsonl`; gives tokens + API-equivalent cost per model. |
 | Limits/resets | Anthropic OAuth usage endpoint, creds from macOS Keychain ("Claude Code-credentials") | Authoritative 5h/weekly utilization + reset times; fallback = local estimate from ccusage blocks. |
-| Startup | launchd LaunchAgent `~/Library/LaunchAgents/com.fenn.claudecommand.plist` (`RunAtLoad` + `KeepAlive`) | Native macOS "run at startup" |
+| Startup | launchd LaunchAgent `~/Library/LaunchAgents/com.caffeineplz.harness-deck.plist` (`RunAtLoad` + `KeepAlive`) | Native macOS "run at startup" |
 
 ## API sketch
 
@@ -128,7 +128,7 @@ arbitrary code by design — it must never listen beyond 127.0.0.1.
 5. ✅ Config view (greeting prefs, settings.json, CLAUDE.md) · ✅ Skills view
    (list/edit `~/.claude/skills`, install from git/zip URL, generate via
    headless `claude -p` background job, delete)
-6. ✅ LaunchAgent (`com.fenn.harness-deck`, RunAtLoad+KeepAlive,
+6. ✅ LaunchAgent (`com.caffeineplz.harness-deck`, RunAtLoad+KeepAlive,
    logs → `~/Library/Logs/harness-deck.log`) · ⬜ polish pass
 
 ## Implementation notes (learned the hard way)

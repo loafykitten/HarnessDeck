@@ -27,7 +27,8 @@ const geocodeCache = new Map<string, { at: number; data: Geocode }>();
 async function getGeocode(zip: string): Promise<Geocode | null> {
   const hit = geocodeCache.get(zip);
   if (hit && Date.now() - hit.at < 24 * 60 * 60_000) return hit.data;
-  const geo = await (await fetch(`https://api.zippopotam.us/us/${encodeURIComponent(zip)}`)).json();
+  const geo = await (await fetch(`https://api.zippopotam.us/us/${encodeURIComponent(zip)}`)).json() as
+    { places?: { latitude: string; longitude: string; "place name": string }[] };
   const place = geo.places?.[0];
   if (!place) return null;
   const data = { lat: place.latitude, lon: place.longitude, place: place["place name"] };
@@ -46,7 +47,7 @@ async function getWeather(zip: string): Promise<WeatherInfo | null> {
     const wx = await (await fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${geo.lat}&longitude=${geo.lon}` +
       `&current=temperature_2m,weather_code&temperature_unit=fahrenheit`,
-    )).json();
+    )).json() as { current: { temperature_2m: number; weather_code: number } };
     const cur = wx.current;
     const data: WeatherInfo = {
       tempF: Math.round(cur.temperature_2m),

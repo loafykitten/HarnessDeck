@@ -10,18 +10,18 @@ export const skillRoutes: RouteHandler = async (req, url) => {
     return json(await listSkills());
   }
   if (pathname === "/api/skills/install" && req.method === "POST") {
-    const body = await req.json();
+    const body = await req.json() as Record<string, unknown>;
     const res = await installFromUrl(String(body.url ?? ""));
     return "error" in res ? err(res.error) : json(res);
   }
   if (pathname === "/api/skills/generate" && req.method === "POST") {
-    const body = await req.json();
+    const body = await req.json() as Record<string, unknown>;
     const res = await generateSkill(String(body.name ?? ""), String(body.prompt ?? ""));
     return "error" in res ? err(res.error) : json(res, 202);
   }
   const syncMatch = pathname.match(/^\/api\/skills\/([^/]+)\/sync$/);
   if (syncMatch && req.method === "POST") {
-    const body = await req.json();
+    const body = await req.json() as Record<string, unknown>;
     const res = await syncSkill(decodeURIComponent(syncMatch[1]), String(body.to ?? ""));
     return "error" in res ? err(res.error) : json(res);
   }

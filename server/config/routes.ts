@@ -1,5 +1,5 @@
 import { err, harnessParam, json, text, type RouteHandler } from "../http";
-import { getAppConfig, readMd, readSettings, setAppConfig, writeMd, writeSettings } from "./config";
+import { getAppConfig, type AppConfig, readMd, readSettings, setAppConfig, writeMd, writeSettings } from "./config";
 import { invalidateClaudeMonthCache } from "../usage/claude";
 
 export const configRoutes: RouteHandler = async (req, url) => {
@@ -8,7 +8,7 @@ export const configRoutes: RouteHandler = async (req, url) => {
   if (pathname === "/api/config/app") {
     if (req.method === "GET") return json(await getAppConfig());
     if (req.method === "PUT") {
-      const { previous, next } = await setAppConfig(await req.json());
+      const { previous, next } = await setAppConfig(await req.json() as Partial<AppConfig>);
       if (previous.renewalDay !== next.renewalDay) invalidateClaudeMonthCache();
       return json(next);
     }

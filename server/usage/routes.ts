@@ -40,7 +40,7 @@ export const usageRoutes: RouteHandler = async (req, url) => {
   if (pathname === "/api/codex/mode") {
     if (req.method === "GET") return json({ mode: await getCodexMode() });
     if (req.method === "PUT") {
-      const body = await req.json();
+      const body = await req.json() as Record<string, unknown>;
       if (body.mode !== "api" && body.mode !== "oauth") return err("mode must be 'api' or 'oauth'");
       const res = await setCodexMode(body.mode);
       if ("error" in res) return err(res.error, 409);

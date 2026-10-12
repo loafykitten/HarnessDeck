@@ -162,7 +162,7 @@ healthy server never does.)
 ## Dev workflow
 
 `PORT=4599 bun server/index.ts` for a dev instance beside production (4553,
-launchd `com.fenn.harness-deck`, restart via `launchctl kickstart -k`).
+launchd `com.caffeineplz.harness-deck`, restart via `launchctl kickstart -k`).
 Note: `bun run build` swaps `web/dist` under the *live* prod server — restart
 prod promptly after building or its UI and API drift apart. Live chat tests only
 against `~/Developer/Sandbox`.

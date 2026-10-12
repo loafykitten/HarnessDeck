@@ -1,0 +1,15 @@
+{
+  // Server + shared/. The web UI has its own config in web/tsconfig.json.
+  "compilerOptions": {
+    "strict": true,
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["esnext"],
+    "types": ["bun"],
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true
+  },
+  "include": ["server/**/*.ts", "shared/**/*.ts"]
+}

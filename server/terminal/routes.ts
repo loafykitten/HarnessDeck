@@ -19,7 +19,7 @@ export const terminalRoutes: RouteHandler = async (req, url) => {
     return json(await listSessions());
   }
   if (pathname === "/api/sessions" && req.method === "POST") {
-    const body = await req.json();
+    const body = await req.json() as Record<string, unknown>;
     if (typeof body.project !== "string" || typeof body.name !== "string" || !body.project || !body.name) {
       return err("project and name required");
     }

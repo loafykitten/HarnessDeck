@@ -125,6 +125,19 @@ export interface Profile {
   displayName: string | null;
 }
 
+/** The fields we read from the (undocumented) oauth profile endpoint. */
+interface OAuthProfile {
+  account?: { has_claude_max?: boolean; has_claude_pro?: boolean; display_name?: string };
+  organization?: { rate_limit_tier?: string; organization_type?: string; subscription_created_at?: string };
+}
+
+/** The fields we read from the (undocumented) oauth usage endpoint. */
+interface OAuthUsage {
+  five_hour?: { utilization?: number; resets_at?: string };
+  seven_day?: { utilization?: number; resets_at?: string };
+  limits?: { kind?: string; percent: number; scope?: { model?: { display_name?: string } } }[];
+}
+
 const profileCache: { at: number; data: Profile | null } = { at: 0, data: null };
 
 /** Next monthly anniversary of the subscription start date. Assumes monthly
@@ -168,7 +181,7 @@ export async function getProfile(): Promise<Profile> {
     if (disk) return disk;
     throw new Error(`oauth profile endpoint: HTTP ${res.status}`);
   }
-  const j = await res.json();
+  const j = await res.json() as OAuthProfile;
   const tier: string = j.organization?.rate_limit_tier ?? "";
   let planLabel = "Claude";
   if (j.account?.has_claude_max) {
@@ -283,8 +296,8 @@ async function computeLimitsRaw(): Promise<Limits> {
 
   backoff.attempts = 0;
   backoff.until = 0;
-  const j = await res.json();
-  const scoped = (j.limits ?? []).find((l: any) => l.kind === "weekly_scoped");
+  const j = await res.json() as OAuthUsage;
+  const scoped = (j.limits ?? []).find(l => l.kind === "weekly_scoped");
   const profile = await getProfile().catch((): Profile =>
     ({ planLabel: "Claude", renewsAt: null, displayName: null }));
   const data: Limits = {
